@@ -6,9 +6,10 @@ interface EditDiemNongModalProps {
   editData: any | null;
   setEditData: (val: any | null) => void;
   handleSave: (data: any) => void;
+  onPickLocationOnMap?: (category: string, currentData: any) => void;
 }
 
-export default function EditDiemNongModal({ editData, setEditData, handleSave }: EditDiemNongModalProps) {
+export default function EditDiemNongModal({ editData, setEditData, handleSave, onPickLocationOnMap }: EditDiemNongModalProps) {
   if (!editData) return null;
 
   return (
@@ -99,8 +100,11 @@ export default function EditDiemNongModal({ editData, setEditData, handleSave }:
                   type="number"
                   placeholder="Ví dụ: 300"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
-                  value={editData.radius || 300}
-                  onChange={(e) => setEditData({ ...editData, radius: parseInt(e.target.value) || 300 })}
+                  value={editData.radius === undefined || editData.radius === '' ? '' : editData.radius}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setEditData({ ...editData, radius: val === '' ? '' : (parseInt(val) || 0) });
+                  }}
                 />
               </div>
             </div>
@@ -113,6 +117,42 @@ export default function EditDiemNongModal({ editData, setEditData, handleSave }:
                 value={editData.mota || ''}
                 onChange={(e) => setEditData({ ...editData, mota: e.target.value })}
               />
+            </div>
+
+            {/* Coordinate Edit Section */}
+            <div className="space-y-3 border-t border-slate-100 pt-4 pb-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Tọa độ GIS Điểm Nóng</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase pl-1">Kinh độ (Lng)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-555/20 focus:border-rose-500 transition-all"
+                    value={editData.lng || ''}
+                    onChange={(e) => setEditData({ ...editData, lng: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase pl-1">Vĩ độ (Lat)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-555/20 focus:border-rose-500 transition-all"
+                    value={editData.lat || ''}
+                    onChange={(e) => setEditData({ ...editData, lat: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              {onPickLocationOnMap && (
+                <button
+                  type="button"
+                  onClick={() => onPickLocationOnMap('diemnong-list', editData)}
+                  className="w-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  Chọn lại vị trí trên bản đồ
+                </button>
+              )}
             </div>
 
             <div className="pt-2 pb-2">

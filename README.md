@@ -1,6 +1,6 @@
-# Bình Minh Smart GIS
+# Bản đồ An ninh Trật tự
 
-Hệ thống quản lý thông tin địa lý (GIS) an ninh thông minh cho khu vực Bình Minh.
+Hệ thống quản lý thông tin địa lý (GIS) an ninh trật tự.
 
 ## 🚀 Tính năng chính
 - **Bản đồ an ninh tương tác**: Sử dụng MapLibre GL và dữ liệu OSM/Google Satellite.

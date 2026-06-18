@@ -66,13 +66,14 @@ body {
 
 .marker-inner {
   width: 36px;
-  height: 48px;
+  height: 39px;
   display: flex;
   flex-direction: column;
   align-items: center;
   position: relative;
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   pointer-events: none;
+  transform-origin: bottom center;
 }
 
 .marker-pin {
@@ -127,4 +128,37 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
 }
+
+/* Picking Location Override */
+.picking-location-active .custom-marker {
+  pointer-events: none !important;
+}
+
+/* Virtual Pin Styling & Animation */
+.virtual-marker {
+  opacity: 0.75;
+  pointer-events: none !important;
+}
+
+.virtual-marker .marker-pin {
+  border-style: dashed !important;
+  border-width: 2.5px !important;
+}
+
+.virtual-marker .marker-inner {
+  animation: virtual-pin-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes virtual-pin-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 

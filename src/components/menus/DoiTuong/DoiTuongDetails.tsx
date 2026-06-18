@@ -4,10 +4,15 @@ import { X, MapPin, Compass, Edit2, User, ShieldAlert, Phone, CreditCard, Tag, A
 interface Props {
   details: any;
   onClose: () => void;
+  vuviecList?: any[];
 }
 
-export default function DoiTuongDetails({ details, onClose }: Props) {
+export default function DoiTuongDetails({ details, onClose, vuviecList = [] }: Props) {
   const [copied, setCopied] = useState(false);
+
+  const relatedIncidents = vuviecList.filter(vv => 
+    vv.suspectIds && vv.suspectIds.map(String).includes(String(details.id))
+  );
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -82,6 +87,23 @@ export default function DoiTuongDetails({ details, onClose }: Props) {
             </div>
           )}
 
+          {/* Address Info Card */}
+          {details.diachi && (
+            <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-white text-sky-600 border border-slate-200 rounded-xl shrink-0 shadow-sm">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Địa chỉ thường trú / Nơi ở hiện tại</span>
+                  <h4 className="text-sm font-bold text-slate-700 mt-0.5 leading-snug">
+                    {details.diachi}
+                  </h4>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Loai Doi Tuong Card */}
           {details.loai && (
             <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm">
@@ -131,6 +153,48 @@ export default function DoiTuongDetails({ details, onClose }: Props) {
                 <div className="flex-1 overflow-hidden">
                   <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Mô tả đặc điểm nhận dạng & Hành vi</span>
                   <p className="text-xs text-slate-650 mt-1.5 leading-relaxed whitespace-pre-wrap">{details.mota}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Related Incidents Card */}
+          {relatedIncidents.length > 0 && (
+            <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-white text-rose-500 border border-slate-200 rounded-xl shrink-0 shadow-sm">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Các vụ việc liên quan ({relatedIncidents.length})</span>
+                  <div className="space-y-2 mt-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                    {relatedIncidents.map((vv: any) => (
+                      <div
+                        key={vv.id || vv.loai}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // @ts-ignore
+                          if (window.handleViewDetailsGis) {
+                            // @ts-ignore
+                            window.handleViewDetailsGis(vv.id || vv.loai, 'vuviec-list');
+                          }
+                        }}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-rose-50/20 hover:bg-rose-50 border border-rose-100/30 hover:border-rose-200/50 transition-all cursor-pointer group/item"
+                      >
+                        <div className="flex flex-col min-w-0 pr-2">
+                          <span className="text-xs font-bold text-slate-700 group-hover/item:text-rose-700 truncate">{vv.loai}</span>
+                          <span className="text-[9px] text-slate-400 mt-0.5">{vv.thoigian ? `Thời gian: ${new Date(vv.thoigian).toLocaleString('vi-VN')}` : 'Chưa cập nhật thời gian'}</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                          vv.trangthai === 'Đã giải quyết' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                          vv.trangthai === 'Đang xử lý' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                          'bg-sky-50 text-sky-700 border border-sky-100'
+                        }`}>
+                          {vv.trangthai || 'Mới'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

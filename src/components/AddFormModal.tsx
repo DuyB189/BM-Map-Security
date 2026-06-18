@@ -13,6 +13,8 @@ interface AddFormModalProps {
   handleAdd: () => void;
   routeCoordinates?: [number, number][];
   setRouteCoordinates?: (val: any) => void;
+  doituongList: any[];
+  onAddNewDoiTuong: (dt: any) => void;
 }
 
 export default function AddFormModal({
@@ -24,7 +26,9 @@ export default function AddFormModal({
   selectedCoords,
   handleAdd,
   routeCoordinates,
-  setRouteCoordinates
+  setRouteCoordinates,
+  doituongList,
+  onAddNewDoiTuong
 }: AddFormModalProps) {
   const isRouteMode = formData.category === 'tuyenduong-list';
 
@@ -99,6 +103,9 @@ export default function AddFormModal({
                   setFormData={setFormData} 
                   routeCoordinates={routeCoordinates} 
                   setRouteCoordinates={setRouteCoordinates} 
+                  doituongList={doituongList}
+                  onAddNewDoiTuong={onAddNewDoiTuong}
+                  selectedCoords={selectedCoords}
                 />
               </div>
 

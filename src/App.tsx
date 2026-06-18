@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { MapIcon, Settings, Database, RefreshCw, CheckCircle, AlertTriangle, Trash2, RotateCcw, Check, X } from 'lucide-react';
+import { MapIcon, Settings, Database, RefreshCw, CheckCircle, AlertTriangle, Trash2, RotateCcw, Check, X, BarChart3, LogOut } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GIS_DATA as INITIAL_DATA } from './constants';
 import { GISData } from './types';
 import { getSvgPath } from './utils/icons';
+import { formatDate } from './utils/date';
 
 import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
@@ -20,8 +21,30 @@ import EditCoQuanModal from './components/menus/CoQuan/EditCoQuanModal';
 import EditCskdModal from './components/menus/Cskd/EditCskdModal';
 import EditDiemNongModal from './components/menus/DiemNong/EditDiemNongModal';
 import EditTuyenDuongModal from './components/menus/TuyenDuong/EditTuyenDuongModal';
+import StatsDashboardModal from './components/StatsDashboardModal';
+import Login from './components/Login';
 
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return sessionStorage.getItem('gis_session') === 'active';
+  });
+
+  const handleLogin = (username: string) => {
+    setIsLoggedIn(true);
+    sessionStorage.setItem('gis_session', 'active');
+    sessionStorage.setItem('gis_user', username);
+  };
+
+  const handleLogout = () => {
+    if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?')) {
+      sessionStorage.removeItem('gis_session');
+      sessionStorage.removeItem('gis_user');
+      localStorage.removeItem('gis_session');
+      localStorage.removeItem('gis_user');
+      setIsLoggedIn(false);
+    }
+  };
+
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [data, setData] = useState<GISData>(INITIAL_DATA);
@@ -87,6 +110,7 @@ export default function App() {
       alert('Đã xóa sạch cơ sở dữ liệu và khôi phục cài đặt gốc thành công!');
     }
   };
+  const [showStatsModal, setShowStatsModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -101,7 +125,7 @@ export default function App() {
     mst: '', loai_hinh_kd: 'Hộ kinh doanh cá thể', giay_phep: '',
     chu_co_so: '', chu_ngaysinh: '', chu_cccd: '', chu_sdt: '', chu_diachi: '',
     quan_ly: '', quan_ly_ngaysinh: '', quan_ly_cccd: '', quan_ly_sdt: '', quan_ly_diachi: '',
-    radius: 300
+    radius: 300, diachi: '', suspectIds: []
   });
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const [hiddenLayers, setHiddenLayers] = useState<string[]>([]);
@@ -124,6 +148,153 @@ export default function App() {
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
   const [isEditingRouteCoords, setIsEditingRouteCoords] = useState(false);
   const [pendingEditTuyenDuongData, setPendingEditTuyenDuongData] = useState<any | null>(null);
+
+  const [pickingLocationFor, setPickingLocationFor] = useState<{ category: string, originalData: any } | null>(null);
+  const [tempPickedCoords, setTempPickedCoords] = useState<[number, number] | null>(null);
+  const pickingLocationForRef = useRef<any>(null);
+  const tempPickedCoordsRef = useRef<any>(null);
+  useEffect(() => {
+    pickingLocationForRef.current = pickingLocationFor;
+  }, [pickingLocationFor]);
+  useEffect(() => {
+    tempPickedCoordsRef.current = tempPickedCoords;
+  }, [tempPickedCoords]);
+
+  const getMarkerStyleForCategory = (category: string, itemData: any) => {
+    switch (category) {
+      case 'vuviec-list':
+        return { iconName: 'AlertTriangle', color: '#dc2626' };
+      case 'camera-list':
+        return { iconName: 'Cctv', color: '#ea580c' };
+      case 'doituong-list':
+        return { iconName: 'User', color: '#7c3aed' };
+      case 'coquan-list':
+        return { iconName: 'Building2', color: '#475569' };
+      case 'cskd-list':
+        return { iconName: 'Store', color: '#be185d' };
+      case 'diemnong-list':
+        return { iconName: 'Flame', color: '#b91c1c' };
+      case 'tuyenduong-list':
+        const color = itemData?.mucdo === 'Rất cao' ? '#dc2626' : (itemData?.mucdo === 'Cao' ? '#f97316' : '#22c55e');
+        return { iconName: 'MapPin', color };
+      default:
+        return { iconName: 'MapPin', color: '#0ea5e9' };
+    }
+  };
+
+  const tempMarkerRef = useRef<maplibregl.Marker | null>(null);
+  useEffect(() => {
+    // Clean up the old marker first to guarantee position updates and avoid DOM reuse bugs
+    if (tempMarkerRef.current) {
+      tempMarkerRef.current.remove();
+      tempMarkerRef.current = null;
+    }
+
+    if (map.current && tempPickedCoords && pickingLocationFor) {
+      const style = getMarkerStyleForCategory(pickingLocationFor.category, pickingLocationFor.originalData);
+      const el = document.createElement('div');
+      el.className = 'custom-marker virtual-marker';
+      el.style.opacity = '0.75';
+      el.style.pointerEvents = 'none';
+      el.innerHTML = `
+        <div class="marker-inner">
+          <div class="marker-pin" style="background: ${style.color}; border: 2.5px dashed #ffffff; box-shadow: 0 0 0 4px ${style.color}55;">
+            <div style="color: white; width: 16px; height: 16px;">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">${getSvgPath(style.iconName)}</svg>
+            </div>
+          </div>
+          <div class="marker-arrow" style="border-top-color: ${style.color};"></div>
+        </div>
+      `;
+      tempMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat(new maplibregl.LngLat(tempPickedCoords[0], tempPickedCoords[1]))
+        .addTo(map.current);
+    }
+  }, [tempPickedCoords, pickingLocationFor]);
+
+  // Draw connection line between original location and new selected location
+  useEffect(() => {
+    if (!map.current) return;
+    const sourceId = 'picking-connection-line';
+    const layerId = 'picking-connection-layer';
+
+    const drawLine = () => {
+      if (!map.current) return;
+      try {
+        if (pickingLocationFor && tempPickedCoords) {
+          const origLng = pickingLocationFor.originalData.lng;
+          const origLat = pickingLocationFor.originalData.lat;
+          const newLng = tempPickedCoords[0];
+          const newLat = tempPickedCoords[1];
+
+          // Only draw if coordinates are not identical
+          if (origLng !== newLng || origLat !== newLat) {
+            const geojson: any = {
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: [
+                  [origLng, origLat],
+                  [newLng, newLat]
+                ]
+              }
+            };
+
+            if (map.current.getSource(sourceId)) {
+              (map.current.getSource(sourceId) as maplibregl.GeoJSONSource).setData(geojson);
+            } else {
+              map.current.addSource(sourceId, {
+                type: 'geojson',
+                data: geojson
+              });
+
+              map.current.addLayer({
+                id: layerId,
+                type: 'line',
+                source: sourceId,
+                paint: {
+                  'line-color': '#f59e0b', // Amber 500
+                  'line-width': 2.5,
+                  'line-dasharray': [3, 2],
+                  'line-opacity': 0.85
+                }
+              });
+            }
+            return;
+          }
+        }
+
+        // Cleanup if not drawing
+        if (map.current.getLayer(layerId)) map.current.removeLayer(layerId);
+        if (map.current.getSource(sourceId)) map.current.removeSource(sourceId);
+      } catch (err) {
+        console.warn('Error drawing picking connection line:', err);
+      }
+    };
+
+    if (map.current.isStyleLoaded()) {
+      drawLine();
+    } else {
+      map.current.once('styledata', drawLine);
+    }
+  }, [tempPickedCoords, pickingLocationFor]);
+
+  const handleStartPickingLocation = (category: string, currentData: any) => {
+    if (category === 'vuviec-list') setEditIncidentData(null);
+    else if (category === 'camera-list') setEditCameraData(null);
+    else if (category === 'doituong-list') setEditDoiTuongData(null);
+    else if (category === 'coquan-list') setEditCoQuanData(null);
+    else if (category === 'cskd-list') setEditCskdData(null);
+    else if (category === 'diemnong-list') setEditDiemNongData(null);
+    else if (category === 'tuyenduong-list') setEditTuyenDuongData(null);
+
+    // Close all open tooltips/popups of objects
+    document.querySelectorAll('.maplibregl-popup').forEach(el => el.remove());
+
+    setPickingLocationFor({ category, originalData: currentData });
+    setTempPickedCoords([currentData.lng, currentData.lat]);
+    map.current?.flyTo({ center: [currentData.lng, currentData.lat], zoom: 16, duration: 1000 });
+  };
 
   const isEditingRouteCoordsRef = useRef(false);
   useEffect(() => {
@@ -255,6 +426,8 @@ export default function App() {
   }, [activeMenu]);
 
   const markersRef = useRef<{ marker: maplibregl.Marker, id: string | number, category: string }[]>([]);
+  const mapHotspotsRef = useRef<Set<string>>(new Set());
+  const mapRoutesRef = useRef<Set<string>>(new Set());
 
   // Fetch tile server URL first
   useEffect(() => {
@@ -358,7 +531,7 @@ export default function App() {
       center: [106.1183077, 11.3387817], // Tọa độ trung tâm Phường Bình Minh
       zoom: 12.8,
       minZoom: 11.8,
-      maxZoom: 18,
+      maxZoom: 17,
       maxBounds: [
         [106.04, 11.27], // Góc Tây Nam (Tây Ninh)
         [106.24, 11.45]  // Góc Đông Bắc (Tây Ninh)
@@ -396,6 +569,11 @@ export default function App() {
     });
 
     map.current.on('click', (e) => {
+      if (pickingLocationForRef.current) {
+        console.log('Map clicked while picking location:', e.lngLat);
+        setTempPickedCoords([e.lngLat.lng, e.lngLat.lat]);
+        return;
+      }
       // Logic for adding new GIS point
       if (isAddingRef.current) {
         console.log('Map clicked while adding:', e.lngLat);
@@ -451,7 +629,12 @@ export default function App() {
                     <span class="text-[10px] text-slate-400 font-medium">Đặc điểm</span>
                     <span class="text-[11px] text-slate-700 font-bold text-right">${route.coordinates?.length || 0} điểm tọa độ</span>
                   </div>
-                  
+                  ${route.ngay_tao ? `
+                  <div class="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
+                    <span class="text-[10px] text-slate-400 font-medium">Ngày tạo</span>
+                    <span class="text-[11px] text-slate-700 font-bold text-right">${formatDate(route.ngay_tao)}</span>
+                  </div>
+                  ` : ''}
                 </div>
 
                 <!-- Footer Actions -->
@@ -488,23 +671,22 @@ export default function App() {
 
     return () => {
       setIsMapReady(false); // Reset map ready state on cleanup
+      mapHotspotsRef.current.clear();
+      mapRoutesRef.current.clear();
       if (map.current) map.current.remove();
     };
-  }, [tileServerUrl]);
+  }, [tileServerUrl, isLoggedIn]);
 
   // Update Layers (Circles & Lines)
   const updateLayers = () => {
     if (!map.current || !map.current.isStyleLoaded()) return;
 
-    // Hotspots Circles
-    data.diemnong.forEach(item => {
-      const sourceId = `hotspot-${item.id}`;
-      try {
-        if (map.current!.getLayer(sourceId)) map.current!.removeLayer(sourceId);
-        if (map.current!.getLayer(`${sourceId}-border`)) map.current!.removeLayer(`${sourceId}-border`);
-        if (map.current!.getSource(sourceId)) map.current!.removeSource(sourceId);
-
-        if (hiddenLayers.includes('diemnong-list')) return;
+    // 1. Update/Add active Hotspots
+    const currentHotspotSourceIds = new Set<string>();
+    if (!hiddenLayers.includes('diemnong-list')) {
+      data.diemnong.forEach(item => {
+        const sourceId = `hotspot-${item.id}`;
+        currentHotspotSourceIds.add(sourceId);
 
         const color = item.mucdo === 'Rất cao' ? '#dc2626' : (item.mucdo === 'Cao' ? '#ef4444' : '#f59e0b');
 
@@ -519,61 +701,125 @@ export default function App() {
           points.push([lng, lat]);
         }
 
-        map.current!.addSource(sourceId, {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: { type: 'Polygon', coordinates: [points] }
+        try {
+          const source = map.current!.getSource(sourceId) as maplibregl.GeoJSONSource;
+          if (source) {
+            // Source exists, update data and paint properties directly
+            source.setData({
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'Polygon', coordinates: [points] }
+            });
+            if (map.current!.getLayer(sourceId)) {
+              map.current!.setPaintProperty(sourceId, 'fill-color', color);
+            }
+            if (map.current!.getLayer(`${sourceId}-border`)) {
+              map.current!.setPaintProperty(`${sourceId}-border`, 'line-color', color);
+            }
+          } else {
+            // Add new source and layers
+            map.current!.addSource(sourceId, {
+              type: 'geojson',
+              data: {
+                type: 'Feature',
+                properties: {},
+                geometry: { type: 'Polygon', coordinates: [points] }
+              }
+            });
+
+            map.current!.addLayer({
+              id: sourceId,
+              type: 'fill',
+              source: sourceId,
+              paint: { 'fill-color': color, 'fill-opacity': 0.1 }
+            });
+
+            map.current!.addLayer({
+              id: `${sourceId}-border`,
+              type: 'line',
+              source: sourceId,
+              paint: { 'line-color': color, 'line-width': 1.5, 'line-dasharray': [2, 2], 'line-opacity': 0.5 }
+            });
+
+            mapHotspotsRef.current.add(sourceId);
           }
-        });
+        } catch (e) {
+          console.warn('Style logic error:', e);
+        }
+      });
+    }
 
-        map.current!.addLayer({
-          id: sourceId,
-          type: 'fill',
-          source: sourceId,
-          paint: { 'fill-color': color, 'fill-opacity': 0.1 }
-        });
-
-        map.current!.addLayer({
-          id: `${sourceId}-border`,
-          type: 'line',
-          source: sourceId,
-          paint: { 'line-color': color, 'line-width': 1.5, 'line-dasharray': [2, 2], 'line-opacity': 0.5 }
-        });
-      } catch (e) {
-        console.warn('Style logic error:', e);
+    // Clean up any hotspots that are no longer in the list or should be hidden
+    mapHotspotsRef.current.forEach(sourceId => {
+      if (!currentHotspotSourceIds.has(sourceId)) {
+        try {
+          if (map.current!.getLayer(sourceId)) map.current!.removeLayer(sourceId);
+          if (map.current!.getLayer(`${sourceId}-border`)) map.current!.removeLayer(`${sourceId}-border`);
+          if (map.current!.getSource(sourceId)) map.current!.removeSource(sourceId);
+        } catch (e) {
+          console.warn('Cleanup hotspot error:', e);
+        }
+        mapHotspotsRef.current.delete(sourceId);
       }
     });
 
-    // Tuyến đường (Lines)
-    data.tuyenduong.forEach(item => {
-      if (item.type !== 'line') return;
-      const sourceId = `route-${item.id}`;
-      try {
-        if (map.current!.getLayer(sourceId)) map.current!.removeLayer(sourceId);
-        if (map.current!.getSource(sourceId)) map.current!.removeSource(sourceId);
-
-        if (hiddenLayers.includes('tuyenduong-list')) return;
+    // 2. Update/Add active Routes (Lines)
+    const currentRouteSourceIds = new Set<string>();
+    if (!hiddenLayers.includes('tuyenduong-list')) {
+      data.tuyenduong.forEach(item => {
+        if (item.type !== 'line') return;
+        const sourceId = `route-${item.id}`;
+        currentRouteSourceIds.add(sourceId);
 
         const color = item.mucdo === 'Rất cao' ? '#dc2626' : (item.mucdo === 'Cao' ? '#f97316' : '#22c55e');
 
-        map.current!.addSource(sourceId, {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates: item.coordinates }
-          }
-        });
+        try {
+          const source = map.current!.getSource(sourceId) as maplibregl.GeoJSONSource;
+          if (source) {
+            source.setData({
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'LineString', coordinates: item.coordinates }
+            });
+            if (map.current!.getLayer(sourceId)) {
+              map.current!.setPaintProperty(sourceId, 'line-color', color);
+            }
+          } else {
+            map.current!.addSource(sourceId, {
+              type: 'geojson',
+              data: {
+                type: 'Feature',
+                properties: {},
+                geometry: { type: 'LineString', coordinates: item.coordinates }
+              }
+            });
 
-        map.current!.addLayer({
-          id: sourceId,
-          type: 'line',
-          source: sourceId,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': color, 'line-width': 4, 'line-opacity': 0.7 }
-        });
-      } catch (e) {
-        console.warn('Route layer error:', e);
+            map.current!.addLayer({
+              id: sourceId,
+              type: 'line',
+              source: sourceId,
+              layout: { 'line-join': 'round', 'line-cap': 'round' },
+              paint: { 'line-color': color, 'line-width': 4, 'line-opacity': 0.7 }
+            });
+
+            mapRoutesRef.current.add(sourceId);
+          }
+        } catch (e) {
+          console.warn('Route layer error:', e);
+        }
+      });
+    }
+
+    // Clean up any routes that are no longer in the list or should be hidden
+    mapRoutesRef.current.forEach(sourceId => {
+      if (!currentRouteSourceIds.has(sourceId)) {
+        try {
+          if (map.current!.getLayer(sourceId)) map.current!.removeLayer(sourceId);
+          if (map.current!.getSource(sourceId)) map.current!.removeSource(sourceId);
+        } catch (e) {
+          console.warn('Cleanup route error:', e);
+        }
+        mapRoutesRef.current.delete(sourceId);
       }
     });
   };
@@ -594,7 +840,7 @@ export default function App() {
   }, [data, hiddenLayers, isMapReady]);
 
 
-  const createMarker = (lngLat: [number, number], iconName: string, color: string, title: string, details: Record<string, string>, id: string | number, category: string) => {
+  const createMarker = (originalLngLat: [number, number], offsetLngLat: [number, number], iconName: string, color: string, title: string, details: Record<string, string>, id: string | number, category: string) => {
     const el = document.createElement('div');
     el.className = 'custom-marker';
     el.innerHTML = `
@@ -604,7 +850,7 @@ export default function App() {
             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">${getSvgPath(iconName)}</svg>
           </div>
         </div>
-        <div class="marker-arrow"></div>
+        <div class="marker-arrow" style="border-top-color: ${color};"></div>
       </div>
     `;
 
@@ -658,7 +904,7 @@ export default function App() {
           
           <div class="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
             <span class="text-[10px] text-slate-400 font-medium">Tọa độ</span>
-            <span class="text-[10px] text-slate-500 font-mono bg-slate-50 px-1.5 py-0.5 rounded-md border border-slate-100">${lngLat[0].toFixed(5)}, ${lngLat[1].toFixed(5)}</span>
+            <span class="text-[10px] text-slate-500 font-mono bg-slate-50 px-1.5 py-0.5 rounded-md border border-slate-100">${originalLngLat[0].toFixed(5)}, ${originalLngLat[1].toFixed(5)}</span>
           </div>
         </div>
 
@@ -683,7 +929,7 @@ export default function App() {
     `;
 
     const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-      .setLngLat(lngLat)
+      .setLngLat(offsetLngLat)
       .setPopup(new maplibregl.Popup({
         offset: [0, -40],
         closeButton: false,
@@ -707,60 +953,224 @@ export default function App() {
     markersRef.current.forEach(m => m.marker.remove());
     markersRef.current = [];
 
-    // Map through categories and create markers
-    if (!hiddenLayers.includes('xa-list')) data.xaphuong.forEach(item => createMarker([item.lng, item.lat], 'MapPin', '#0284c7', item.ten_xa, { 'Phân loại': item.loai }, item.ten_xa, 'xa-list'));
-    if (!hiddenLayers.includes('vuviec-list')) data.vuviec.forEach(item => createMarker([item.lng, item.lat], 'AlertTriangle', '#dc2626', item.loai, {
-      'Thời gian': item.thoigian || '',
-      'Trạng thái': item.trangthai || '',
-      'Kết quả': item.ketqua || '',
-      'Mô tả': item.mota || '',
-      'Nhóm vụ việc': item.groupId || ''
-    }, item.id || item.loai, 'vuviec-list'));
-    if (!hiddenLayers.includes('camera-list')) data.camera.forEach(item => createMarker([item.lng, item.lat], 'Cctv', '#ea580c', item.ten, { 'Chủ camera': item.chu_camera || '', 'Số điện thoại': item.sdt_chu || '', 'Mô tả': item.description || '', 'Trạng thái': item.trangthai || 'Hoạt động' }, item.id || item.ten, 'camera-list'));
-    if (!hiddenLayers.includes('doituong-list')) data.doituong.forEach(item => createMarker([item.lng, item.lat], 'User', '#7c3aed', item.hoten, { 'Loại đối tượng': item.loai || 'Chưa phân loại', 'Số CCCD': item.cccd || '', 'Số điện thoại': item.sdt || '', 'Mô tả': item.mota || '' }, item.id || item.hoten, 'doituong-list'));
-    if (!hiddenLayers.includes('coquan-list')) data.coquan.forEach(item => createMarker([item.lng, item.lat], 'Building2', '#475569', item.ten, { 'Loại': item.loai, 'Địa bàn': item.xaphuong }, item.ten, 'coquan-list'));
-    if (!hiddenLayers.includes('cskd-list')) data.cskd.forEach(item => createMarker([item.lng, item.lat], 'Store', '#be185d', item.ten, {
-      'Ngành nghề': item.loai || 'Chưa rõ',
-      'Mã số thuế': item.mst || '',
-      'Chủ cơ sở': item.chu_co_so || '',
-      'SĐT liên hệ': item.chu_sdt || '',
-      'Trạng thái': item.trangthai || 'Đang hoạt động'
-    }, item.ten, 'cskd-list'));
-    if (!hiddenLayers.includes('diemnong-list')) data.diemnong.forEach(item => createMarker([item.lng, item.lat], 'Flame', '#b91c1c', item.ten, {
-      'Loại': item.loai || '',
-      'Mức độ': item.mucdo || 'Trung bình',
-      'Địa bàn': item.xaphuong || '',
-      'Bán kính': item.radius ? `${item.radius}m` : '300m',
-      'Mô tả': item.mota || ''
-    }, item.id, 'diemnong-list'));
+    // Temporary list to collect all markers before grouping
+    const collected: {
+      lngLat: [number, number];
+      iconName: string;
+      color: string;
+      title: string;
+      details: Record<string, string>;
+      id: string | number;
+      category: string;
+    }[] = [];
+
+    // Map through categories and collect marker definitions
+    if (!hiddenLayers.includes('vuviec-list')) {
+      data.vuviec.forEach(item => {
+        collected.push({
+          lngLat: [item.lng, item.lat],
+          iconName: 'AlertTriangle',
+          color: '#dc2626',
+          title: item.loai,
+          details: {
+            'Thời gian': item.thoigian ? formatDate(item.thoigian) : '',
+            'Trạng thái': item.trangthai || '',
+            'Kết quả': item.ketqua || '',
+            'Địa chỉ': item.diachi || '',
+            'Mô tả': item.mota || '',
+            'Nhóm vụ việc': item.groupId || '',
+            'Ngày tạo': item.ngay_tao ? formatDate(item.ngay_tao) : ''
+          },
+          id: item.id || item.loai,
+          category: 'vuviec-list'
+        });
+      });
+    }
+
+    if (!hiddenLayers.includes('camera-list')) {
+      data.camera.forEach(item => {
+        collected.push({
+          lngLat: [item.lng, item.lat],
+          iconName: 'Cctv',
+          color: '#ea580c',
+          title: item.ten,
+          details: {
+            'Chủ camera': item.chu_camera || '',
+            'Số điện thoại': item.sdt_chu || '',
+            'Địa chỉ': item.diachi || '',
+            'Mô tả': item.description || '',
+            'Trạng thái': item.trangthai || 'Hoạt động',
+            'Ngày tạo': item.ngay_tao ? formatDate(item.ngay_tao) : ''
+          },
+          id: item.id || item.ten,
+          category: 'camera-list'
+        });
+      });
+    }
+
+    if (!hiddenLayers.includes('doituong-list')) {
+      data.doituong.forEach(item => {
+        collected.push({
+          lngLat: [item.lng, item.lat],
+          iconName: 'User',
+          color: '#7c3aed',
+          title: item.hoten,
+          details: {
+            'Loại đối tượng': item.loai || 'Chưa phân loại',
+            'Số CCCD': item.cccd || '',
+            'Số điện thoại': item.sdt || '',
+            'Địa chỉ': item.diachi || '',
+            'Mô tả': item.mota || '',
+            'Ngày tạo': item.ngay_tao ? formatDate(item.ngay_tao) : ''
+          },
+          id: item.id || item.hoten,
+          category: 'doituong-list'
+        });
+      });
+    }
+
+    if (!hiddenLayers.includes('coquan-list')) {
+      data.coquan.forEach(item => {
+        collected.push({
+          lngLat: [item.lng, item.lat],
+          iconName: 'Building2',
+          color: '#475569',
+          title: item.ten,
+          details: {
+            'Loại': item.loai,
+            'Địa bàn': item.xaphuong,
+            'Ngày tạo': item.ngay_tao ? formatDate(item.ngay_tao) : ''
+          },
+          id: item.ten,
+          category: 'coquan-list'
+        });
+      });
+    }
+
+    if (!hiddenLayers.includes('cskd-list')) {
+      data.cskd.forEach(item => {
+        collected.push({
+          lngLat: [item.lng, item.lat],
+          iconName: 'Store',
+          color: '#be185d',
+          title: item.ten,
+          details: {
+            'Ngành nghề': item.loai || 'Chưa rõ',
+            'Mã số thuế': item.mst || '',
+            'Chủ cơ sở': item.chu_co_so || '',
+            'SĐT liên hệ': item.chu_sdt || '',
+            'Trạng thái': item.trangthai || 'Đang hoạt động',
+            'Ngày tạo': item.ngay_tao ? formatDate(item.ngay_tao) : ''
+          },
+          id: item.ten,
+          category: 'cskd-list'
+        });
+      });
+    }
+
+    if (!hiddenLayers.includes('diemnong-list')) {
+      data.diemnong.forEach(item => {
+        collected.push({
+          lngLat: [item.lng, item.lat],
+          iconName: 'Flame',
+          color: '#b91c1c',
+          title: item.ten,
+          details: {
+            'Loại': item.loai || '',
+            'Mức độ': item.mucdo || 'Trung bình',
+            'Địa bàn': item.xaphuong || '',
+            'Bán kính': (item.radius !== undefined && item.radius !== null) ? `${item.radius}m` : '300m',
+            'Mô tả': item.mota || '',
+            'Ngày tạo': item.ngay_tao ? formatDate(item.ngay_tao) : ''
+          },
+          id: item.id,
+          category: 'diemnong-list'
+        });
+      });
+    }
 
     // Add point routes
     if (!hiddenLayers.includes('tuyenduong-list')) {
       data.tuyenduong.forEach(item => {
         if (item.type === 'point' || !item.type) {
           const color = item.mucdo === 'Rất cao' ? '#dc2626' : (item.mucdo === 'Cao' ? '#f97316' : '#22c55e');
-          createMarker([item.lng, item.lat], 'MapPin', color, item.ten, { 'Loại': item.loai, 'Cảnh báo': item.mucdo }, item.id, 'tuyenduong-list');
+          collected.push({
+            lngLat: [item.lng!, item.lat!],
+            iconName: 'MapPin',
+            color: color,
+            title: item.ten,
+            details: {
+              'Loại': item.loai,
+              'Cảnh báo': item.mucdo,
+              'Ngày tạo': item.ngay_tao ? formatDate(item.ngay_tao) : ''
+            },
+            id: item.id,
+            category: 'tuyenduong-list'
+          });
         }
       });
     }
+
+    // Group collected markers by coordinates to detect overlaps
+    const groups: Record<string, typeof collected> = {};
+    collected.forEach(item => {
+      const key = `${item.lngLat[0].toFixed(6)},${item.lngLat[1].toFixed(6)}`;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(item);
+    });
+
+    // Offset coordinates for overlapping markers and render them
+    Object.values(groups).forEach(group => {
+      const total = group.length;
+      group.forEach((item, index) => {
+        let offsetLngLat = item.lngLat;
+        if (total > 1) {
+          // Circular offset spread
+          const angle = (2 * Math.PI * index) / total;
+          // Offset radius of 0.00012 degrees corresponds to ~12-13 meters, which is perfectly
+          // visible and separately clickable on zoom levels 15-18 while remaining at the same location.
+          const radius = 0.00012; 
+          offsetLngLat = [
+            item.lngLat[0] + radius * Math.cos(angle),
+            item.lngLat[1] + radius * Math.sin(angle)
+          ];
+        }
+        createMarker(
+          item.lngLat,
+          offsetLngLat,
+          item.iconName,
+          item.color,
+          item.title,
+          item.details,
+          item.id,
+          item.category
+        );
+      });
+    });
   };
 
   // CRUD Actions
   const handleAdd = () => {
     if (!selectedCoords) return;
 
+    const nowLocalStr = new Date().toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
+    const currentDateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
     const baseItem = {
       lng: selectedCoords[0],
       lat: selectedCoords[1],
-      id: Date.now()
+      id: Date.now(),
+      ngay_tao: currentDateStr
     };
 
     let newItem: any = { ...baseItem };
     switch (formData.category) {
       case 'xa-list': newItem = { ...baseItem, ten_xa: formData.title, loai: formData.loai }; break;
-      case 'vuviec-list': newItem = { ...baseItem, loai: formData.title, mota: formData.description, thoigian: formData.thoigian, trangthai: formData.trangthai, ketqua: formData.ketqua, groupId: formData.groupId }; break;
-      case 'camera-list': newItem = { ...baseItem, ten: formData.title, chu_camera: formData.chu_camera || '', sdt_chu: formData.sdt_chu || '', description: formData.description || '', trangthai: formData.trangthai || 'Hoạt động' }; break;
-      case 'doituong-list': newItem = { ...baseItem, hoten: formData.title, cccd: formData.cccd || '', loai: formData.loai || '', sdt: formData.sdt || '', mota: formData.description || '' }; break;
+      case 'vuviec-list': newItem = { ...baseItem, loai: formData.title, mota: formData.description, thoigian: formData.thoigian || nowLocalStr, trangthai: formData.trangthai, ketqua: formData.ketqua, groupId: formData.groupId, diachi: formData.diachi, suspectIds: formData.suspectIds || [] }; break;
+      case 'camera-list': newItem = { ...baseItem, ten: formData.title, chu_camera: formData.chu_camera || '', sdt_chu: formData.sdt_chu || '', diachi: formData.diachi || '', description: formData.description || '', trangthai: formData.trangthai || 'Hoạt động' }; break;
+      case 'doituong-list': newItem = { ...baseItem, hoten: formData.title, cccd: formData.cccd || '', loai: formData.loai || '', sdt: formData.sdt || '', mota: formData.description || '', diachi: formData.diachi || '' }; break;
       case 'coquan-list': newItem = { ...baseItem, ten: formData.title, loai: formData.loai, xaphuong: formData.xaphuong }; break;
       case 'cskd-list':
         newItem = {
@@ -783,7 +1193,7 @@ export default function App() {
           quan_ly_diachi: formData.quan_ly_diachi || '',
         };
         break;
-      case 'diemnong-list': newItem = { ...baseItem, ten: formData.title, loai: formData.loai, mucdo: formData.mucdo, xaphuong: formData.xaphuong, mota: formData.description, radius: parseInt(formData.radius) || 300 }; break;
+      case 'diemnong-list': newItem = { ...baseItem, ten: formData.title, loai: formData.loai, mucdo: formData.mucdo, xaphuong: formData.xaphuong, mota: formData.description, radius: formData.radius === '' || isNaN(parseInt(formData.radius)) ? 0 : parseInt(formData.radius) }; break;
       case 'tuyenduong-list':
         if (routeCoordinates && routeCoordinates.length > 1) {
           newItem = {
@@ -828,7 +1238,7 @@ export default function App() {
       mst: '', loai_hinh_kd: 'Hộ kinh doanh cá thể', giay_phep: '',
       chu_co_so: '', chu_ngaysinh: '', chu_cccd: '', chu_sdt: '', chu_diachi: '',
       quan_ly: '', quan_ly_ngaysinh: '', quan_ly_cccd: '', quan_ly_sdt: '', quan_ly_diachi: '',
-      radius: 300
+      radius: 300, diachi: '', suspectIds: []
     });
   };
 
@@ -848,6 +1258,13 @@ export default function App() {
     saveOfflineData(newData);
   };
 
+  const handleAddNewDoiTuongFromVuViec = (newDt: any) => {
+    const newData = { ...data };
+    newData.doituong.push(newDt);
+    setData(newData);
+    saveOfflineData(newData);
+  };
+
   const handleViewDetails = (id: string | number, category: string) => {
     let foundItem = null;
     const targetIdStr = id ? String(id) : '';
@@ -863,6 +1280,63 @@ export default function App() {
 
     if (foundItem) {
       setSelectedDetails({ ...foundItem, category });
+
+      const markerObj = markersRef.current.find(m => {
+        if (m.category !== category) return false;
+        const mid = String(m.id).trim().toLowerCase();
+        const fid = foundItem.id ? String(foundItem.id).trim().toLowerCase() : '';
+        const floai = foundItem.loai ? String(foundItem.loai).trim().toLowerCase() : '';
+        const ften = foundItem.ten ? String(foundItem.ten).trim().toLowerCase() : '';
+        const ften_xa = foundItem.ten_xa ? String(foundItem.ten_xa).trim().toLowerCase() : '';
+        const fhoten = foundItem.hoten ? String(foundItem.hoten).trim().toLowerCase() : '';
+
+        return (fid && mid === fid) ||
+          (floai && mid === floai) ||
+          (ften && mid === ften) ||
+          (ften_xa && mid === ften_xa) ||
+          (fhoten && mid === fhoten);
+      });
+
+      /*
+      // @ts-ignore
+      if (window.ipcRenderer) {
+        // @ts-ignore
+        window.ipcRenderer.send('db:log-debug', {
+          msg: 'handleViewDetails called',
+          id,
+          category,
+          foundItem: { id: foundItem.id, loai: foundItem.loai },
+          markers: markersRef.current.map(m => ({ id: m.id, category: m.category })),
+          hasMarkerObj: !!markerObj
+        });
+      }
+      */
+
+      if (markerObj) {
+        flyTo(foundItem.lng || (foundItem.coordinates?.[0]?.[0] ?? 0), foundItem.lat || (foundItem.coordinates?.[0]?.[1] ?? 0), 15);
+
+        // Close all popups on the map
+        markersRef.current.forEach(m => {
+          const popup = m.marker.getPopup();
+          if (popup && popup.isOpen()) {
+            popup.remove();
+          }
+        });
+
+        // Open the target popup explicitly and safely using marker togglePopup
+        setTimeout(() => {
+          const popup = markerObj.marker.getPopup();
+          if (popup && !popup.isOpen()) {
+            markerObj.marker.togglePopup();
+          }
+        }, 200);
+      } else {
+        const lng = foundItem.lng || (foundItem.coordinates?.[0]?.[0]);
+        const lat = foundItem.lat || (foundItem.coordinates?.[0]?.[1]);
+        if (typeof lng === 'number' && typeof lat === 'number') {
+          flyTo(lng, lat, 15);
+        }
+      }
     }
   };
 
@@ -947,6 +1421,7 @@ export default function App() {
     if (index > -1) {
       const cleanUpdated = { ...updated };
       delete cleanUpdated._originalTen;
+      cleanUpdated.radius = cleanUpdated.radius === '' || isNaN(parseInt(cleanUpdated.radius)) ? 0 : parseInt(cleanUpdated.radius);
       newData.diemnong[index] = cleanUpdated;
       saveOfflineData(newData);
       if (selectedDetails && String(selectedDetails.id || selectedDetails.ten) === String(updated.id || originalName) && selectedDetails.category === 'diemnong-list') {
@@ -1068,7 +1543,7 @@ export default function App() {
   const getFilteredData = (type: string) => {
     switch (type) {
       case 'xa-list': return data.xaphuong.map(x => ({ label: x.ten_xa, lng: x.lng, lat: x.lat, category: type, id: x.ten_xa }));
-      case 'vuviec-list': return data.vuviec.map(v => ({ label: v.loai, lng: v.lng, lat: v.lat, category: type, id: v.id || v.loai, extra: v.mota, trangthai: v.trangthai, thoigian: v.thoigian }));
+      case 'vuviec-list': return data.vuviec.map(v => ({ label: v.loai, lng: v.lng, lat: v.lat, category: type, id: v.id || v.loai, extra: v.mota, trangthai: v.trangthai, thoigian: v.thoigian, groupId: v.groupId }));
       case 'camera-list': return data.camera.map(c => ({ label: c.ten, lng: c.lng, lat: c.lat, category: type, id: c.id || c.ten }));
       case 'doituong-list': return data.doituong.map(d => ({ label: d.hoten, lng: d.lng, lat: d.lat, category: type, id: d.id || d.hoten }));
       case 'coquan-list': return data.coquan.map(c => ({ label: c.ten, lng: c.lng, lat: c.lat, category: type, id: c.ten, loai: c.loai }));
@@ -1114,7 +1589,7 @@ export default function App() {
   };
 
   const handleItemClick = (item: any) => {
-    flyTo(item.lng, item.lat, 16);
+    flyTo(item.lng, item.lat, 15);
     const itemId = item.id || item.label;
 
     // Close all other popups first
@@ -1128,7 +1603,7 @@ export default function App() {
     const found = markersRef.current.find(m => m.id === itemId && m.category === item.category);
     if (found) {
       const popup = found.marker.getPopup();
-      if (!popup.isOpen()) {
+      if (popup && !popup.isOpen()) {
         found.marker.togglePopup();
       }
     }
@@ -1143,8 +1618,12 @@ export default function App() {
     flyTo(106.1183077, 11.3387817, 15);
   };
 
+  if (!isLoggedIn) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
-    <div className="relative w-full h-screen font-sans bg-slate-50 overflow-hidden">
+    <div className={`relative w-full h-screen font-sans bg-slate-50 overflow-hidden ${pickingLocationFor ? 'picking-location-active' : ''}`}>
       <TopBar
         isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen}
         isLocationMenuOpen={isLocationMenuOpen} setIsLocationMenuOpen={setIsLocationMenuOpen}
@@ -1165,7 +1644,38 @@ export default function App() {
         handleItemHover={handleItemHover}
         handleItemClick={handleItemClick}
         handleDelete={handleDelete}
+        onOpenStats={() => setShowStatsModal(true)}
       />
+
+      {/* Logout Button */}
+      <button
+        onClick={handleLogout}
+        className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 cursor-pointer group"
+        style={{ right: (window as any).ipcRenderer ? '240px' : '168px' }}
+        title="Đăng xuất khỏi hệ thống"
+      >
+        <LogOut className="w-6 h-6" />
+      </button>
+
+      {/* Reload App & Map Button */}
+      <button
+        onClick={() => window.location.reload()}
+        className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 cursor-pointer group"
+        style={{ right: (window as any).ipcRenderer ? '168px' : '96px' }}
+        title="Tải lại dữ liệu & bản đồ"
+      >
+        <RefreshCw className="w-6 h-6 group-hover:rotate-45 transition-transform" />
+      </button>
+
+      {/* Statistics & Reports Button */}
+      <button
+        onClick={() => setShowStatsModal(true)}
+        className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-sky-600 hover:bg-sky-50 hover:border-sky-200 cursor-pointer"
+        style={{ right: (window as any).ipcRenderer ? '96px' : '24px' }}
+        title="Báo cáo thống kê"
+      >
+        <BarChart3 className="w-6 h-6" />
+      </button>
 
       {/* Settings / Offline Map Button & Dropdown */}
       {/* @ts-ignore */}
@@ -1245,7 +1755,7 @@ export default function App() {
                   )}
                 </AnimatePresence>
 
-                <div className="border-t border-slate-100 pt-3">
+                {/* <div className="border-t border-slate-100 pt-3">
                   <button
                     onClick={handleResetDatabase}
                     className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-sm bg-rose-50 border border-rose-200 hover:bg-rose-100/70 text-rose-600 cursor-pointer"
@@ -1253,7 +1763,7 @@ export default function App() {
                     <Trash2 className="w-3.5 h-3.5 shrink-0" />
                     <span>Khôi phục Cài đặt gốc</span>
                   </button>
-                </div>
+                </div> */}
               </motion.div>
             )}
           </AnimatePresence>
@@ -1267,47 +1777,103 @@ export default function App() {
         handleAdd={handleAdd}
         routeCoordinates={routeCoordinates}
         setRouteCoordinates={setRouteCoordinates}
+        doituongList={data.doituong}
+        onAddNewDoiTuong={handleAddNewDoiTuongFromVuViec}
       />
 
       <DetailsModal
         details={selectedDetails}
         onClose={() => setSelectedDetails(null)}
+        vuviecList={data.vuviec}
+        doituongList={data.doituong}
+      />
+
+      <StatsDashboardModal
+        show={showStatsModal}
+        onClose={() => setShowStatsModal(false)}
+        data={data}
+        onSelectCategory={(category) => {
+          setActiveMenu(category);
+          setIsMenuOpen(true);
+          setShowStatsModal(false);
+        }}
+        onSelectItem={(item) => {
+          setShowStatsModal(false);
+
+          let lookupId = '';
+          if (item.category === 'vuviec-list') {
+            lookupId = item.id || item.loai;
+          } else if (item.category === 'xa-list') {
+            lookupId = item.ten_xa;
+          } else if (item.category === 'camera-list') {
+            lookupId = item.id || item.ten;
+          } else if (item.category === 'doituong-list') {
+            lookupId = item.id || item.hoten;
+          } else if (item.category === 'coquan-list') {
+            lookupId = item.ten;
+          } else if (item.category === 'cskd-list') {
+            lookupId = item.ten;
+          } else if (item.category === 'diemnong-list') {
+            lookupId = item.id || item.ten;
+          } else if (item.category === 'tuyenduong-list') {
+            lookupId = item.id || item.ten;
+          } else {
+            lookupId = item.id || item.loai || item.ten || item.hoten;
+          }
+
+          const isHidden = hiddenLayers.includes(item.category);
+          if (isHidden) {
+            setHiddenLayers(prev => prev.filter(l => l !== item.category));
+          }
+
+          setTimeout(() => {
+            handleViewDetails(lookupId, item.category);
+          }, isHidden ? 350 : 80);
+        }}
       />
 
       <EditIncidentModal
         editData={editIncidentData}
         setEditData={setEditIncidentData}
         handleSave={handleUpdateIncident}
+        doituongList={data.doituong}
+        onAddNewDoiTuong={handleAddNewDoiTuongFromVuViec}
+        onPickLocationOnMap={handleStartPickingLocation}
       />
 
       <EditCameraModal
         editData={editCameraData}
         setEditData={setEditCameraData}
         handleSave={handleUpdateCamera}
+        onPickLocationOnMap={handleStartPickingLocation}
       />
 
       <EditDoiTuongModal
         editData={editDoiTuongData}
         setEditData={setEditDoiTuongData}
         handleSave={handleUpdateDoiTuong}
+        onPickLocationOnMap={handleStartPickingLocation}
       />
 
       <EditCoQuanModal
         editData={editCoQuanData}
         setEditData={setEditCoQuanData}
         handleSave={handleUpdateCoQuan}
+        onPickLocationOnMap={handleStartPickingLocation}
       />
 
       <EditCskdModal
         editData={editCskdData}
         setEditData={setEditCskdData}
         handleSave={handleUpdateCskd}
+        onPickLocationOnMap={handleStartPickingLocation}
       />
 
       <EditDiemNongModal
         editData={editDiemNongData}
         setEditData={setEditDiemNongData}
         handleSave={handleUpdateDiemNong}
+        onPickLocationOnMap={handleStartPickingLocation}
       />
 
       <EditTuyenDuongModal
@@ -1315,6 +1881,7 @@ export default function App() {
         setEditData={setEditTuyenDuongData}
         handleSave={handleUpdateTuyenDuong}
         onEditCoordinates={handleStartEditCoordinates}
+        onPickLocationOnMap={handleStartPickingLocation}
       />
 
       <ImportExcelModal
@@ -1325,12 +1892,81 @@ export default function App() {
       />
 
       <MapControls
-        panToHomeCenter={panToHomeCenter}
         zoomIn={() => map.current?.zoomIn()}
         zoomOut={() => map.current?.zoomOut()}
       />
 
       <AnimatePresence>
+        {pickingLocationFor && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -20, x: '-50%' }}
+            className="absolute top-6 left-1/2 transform z-[2000] w-[460px] glass p-4 rounded-3xl shadow-2xl border border-white/50 space-y-3 flex flex-col text-slate-800 text-center select-none"
+          >
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-500 text-white animate-pulse">
+                Chế độ thay đổi vị trí điểm ghim
+              </span>
+              <h3 className="text-xs font-black text-slate-850 mt-1.5 uppercase truncate max-w-full">
+                Chọn vị trí mới cho: {pickingLocationFor.originalData.ten || pickingLocationFor.originalData.hoten || pickingLocationFor.originalData.loai || 'Đối tượng'}
+              </h3>
+              <p className="text-[9px] text-slate-450 font-bold uppercase tracking-wider mt-0.5">
+                Nhấp lên bản đồ để chọn tọa độ mới
+              </p>
+              {tempPickedCoords && (
+                <p className="text-[10px] font-mono text-rose-650 mt-1 font-bold">
+                  Tọa độ đã chọn: {tempPickedCoords[0].toFixed(6)}, {tempPickedCoords[1].toFixed(6)}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const updatedData = {
+                    ...pickingLocationFor.originalData,
+                    lng: tempPickedCoords ? tempPickedCoords[0] : pickingLocationFor.originalData.lng,
+                    lat: tempPickedCoords ? tempPickedCoords[1] : pickingLocationFor.originalData.lat,
+                  };
+
+                  if (pickingLocationFor.category === 'vuviec-list') setEditIncidentData(updatedData);
+                  else if (pickingLocationFor.category === 'camera-list') setEditCameraData(updatedData);
+                  else if (pickingLocationFor.category === 'doituong-list') setEditDoiTuongData(updatedData);
+                  else if (pickingLocationFor.category === 'coquan-list') setEditCoQuanData(updatedData);
+                  else if (pickingLocationFor.category === 'cskd-list') setEditCskdData(updatedData);
+                  else if (pickingLocationFor.category === 'diemnong-list') setEditDiemNongData(updatedData);
+                  else if (pickingLocationFor.category === 'tuyenduong-list') setEditTuyenDuongData(updatedData);
+
+                  setPickingLocationFor(null);
+                  setTempPickedCoords(null);
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                Xác nhận tọa độ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (pickingLocationFor.category === 'vuviec-list') setEditIncidentData(pickingLocationFor.originalData);
+                  else if (pickingLocationFor.category === 'camera-list') setEditCameraData(pickingLocationFor.originalData);
+                  else if (pickingLocationFor.category === 'doituong-list') setEditDoiTuongData(pickingLocationFor.originalData);
+                  else if (pickingLocationFor.category === 'coquan-list') setEditCoQuanData(pickingLocationFor.originalData);
+                  else if (pickingLocationFor.category === 'cskd-list') setEditCskdData(pickingLocationFor.originalData);
+                  else if (pickingLocationFor.category === 'diemnong-list') setEditDiemNongData(pickingLocationFor.originalData);
+                  else if (pickingLocationFor.category === 'tuyenduong-list') setEditTuyenDuongData(pickingLocationFor.originalData);
+
+                  setPickingLocationFor(null);
+                  setTempPickedCoords(null);
+                }}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+            </div>
+          </motion.div>
+        )}
         {isEditingRouteCoords && (
           <motion.div
             initial={{ opacity: 0, y: -20, x: '-50%' }}

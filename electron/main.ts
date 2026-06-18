@@ -47,7 +47,7 @@ async function createWindow() {
   win = new BrowserWindow({
     width: 1280,
     height: 800,
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    icon: path.join(process.env.VITE_PUBLIC, 'logo.png'),
     webPreferences: {
       preload: path.join(__dirname, fs.existsSync(path.join(__dirname, 'preload.mjs')) ? 'preload.mjs' : 'preload.js'),
       nodeIntegration: true,
@@ -113,6 +113,15 @@ ipcMain.handle('db:save-data', (_event, newData) => {
   } catch (error) {
     console.error('Error writing to offline database:', error);
     throw error;
+  }
+});
+
+ipcMain.on('db:log-debug', (_event, logData) => {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'debug_log.txt');
+    fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${JSON.stringify(logData, null, 2)}\n`);
+  } catch (err) {
+    console.error('Failed to write debug log:', err);
   }
 });
 

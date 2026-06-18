@@ -16,12 +16,15 @@ export interface Incident {
   id?: string | number;
   loai: string;
   mota: string;
+  diachi?: string;
   thoigian?: string;
   trangthai?: string;
   ketqua?: string;
   groupId?: string;
   lng: number;
   lat: number;
+  ngay_tao?: string;
+  suspectIds?: (string | number)[];
 }
 
 export interface Camera {
@@ -29,10 +32,12 @@ export interface Camera {
   ten: string;
   chu_camera?: string;
   sdt_chu?: string;
+  diachi?: string;
   description?: string;
   trangthai?: string;
   lng: number;
   lat: number;
+  ngay_tao?: string;
 }
 
 export interface Person {
@@ -40,10 +45,12 @@ export interface Person {
   hoten: string;
   cccd?: string;
   loai?: string;
+  diachi?: string;
   mota?: string;
   sdt?: string;
   lng: number;
   lat: number;
+  ngay_tao?: string;
 }
 
 
@@ -54,6 +61,7 @@ export interface Agency {
   xaphuong: string;
   lng: number;
   lat: number;
+  ngay_tao?: string;
 }
 
 export interface Business {
@@ -81,6 +89,7 @@ export interface Business {
 
   lng: number;
   lat: number;
+  ngay_tao?: string;
 }
 
 export interface Hotspot {
@@ -93,6 +102,7 @@ export interface Hotspot {
   radius: number;
   lng: number;
   lat: number;
+  ngay_tao?: string;
 }
 
 export interface Route {
@@ -104,6 +114,7 @@ export interface Route {
   lng?: number;
   lat?: number;
   coordinates?: [number, number][];
+  ngay_tao?: string;
 }
 
 export interface GISData {

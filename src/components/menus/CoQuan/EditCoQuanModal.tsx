@@ -6,9 +6,10 @@ interface EditCoQuanModalProps {
   editData: any | null;
   setEditData: (val: any | null) => void;
   handleSave: (data: any) => void;
+  onPickLocationOnMap?: (category: string, currentData: any) => void;
 }
 
-export default function EditCoQuanModal({ editData, setEditData, handleSave }: EditCoQuanModalProps) {
+export default function EditCoQuanModal({ editData, setEditData, handleSave, onPickLocationOnMap }: EditCoQuanModalProps) {
   if (!editData) return null;
 
   return (
@@ -82,11 +83,47 @@ export default function EditCoQuanModal({ editData, setEditData, handleSave }: E
               />
             </div>
 
+            {/* Coordinate Edit Section */}
+            <div className="space-y-3 border-t border-slate-100 pt-4 pb-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Tọa độ GIS Cơ quan</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase pl-1">Kinh độ (Lng)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all"
+                    value={editData.lng || ''}
+                    onChange={(e) => setEditData({ ...editData, lng: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase pl-1">Vĩ độ (Lat)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all"
+                    value={editData.lat || ''}
+                    onChange={(e) => setEditData({ ...editData, lat: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              {onPickLocationOnMap && (
+                <button
+                  type="button"
+                  onClick={() => onPickLocationOnMap('coquan-list', editData)}
+                  className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  Chọn lại vị trí trên bản đồ
+                </button>
+              )}
+            </div>
+
             <div className="pt-2">
               <button
                 onClick={() => handleSave(editData)}
                 disabled={!editData.ten}
-                className="w-full bg-slate-700 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-slate-100 hover:shadow-slate-200/50 transition-all flex items-center justify-center gap-2"
+                className="w-full bg-slate-700 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-slate-100 hover:shadow-slate-200/50 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Check className="w-5 h-5" /> Lưu cập nhật
               </button>

@@ -6,9 +6,10 @@ interface EditDoiTuongModalProps {
   editData: any | null;
   setEditData: (val: any | null) => void;
   handleSave: (data: any) => void;
+  onPickLocationOnMap?: (category: string, currentData: any) => void;
 }
 
-export default function EditDoiTuongModal({ editData, setEditData, handleSave }: EditDoiTuongModalProps) {
+export default function EditDoiTuongModal({ editData, setEditData, handleSave, onPickLocationOnMap }: EditDoiTuongModalProps) {
   if (!editData) return null;
 
   return (
@@ -104,6 +105,19 @@ export default function EditDoiTuongModal({ editData, setEditData, handleSave }:
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                Địa chỉ thường trú / Nơi ở hiện tại
+              </label>
+              <input
+                type="text"
+                placeholder="phường Bình Minh"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                value={editData.diachi || ''}
+                onChange={(e) => setEditData({ ...editData, diachi: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
                 Mô tả hành vi & Đặc điểm
               </label>
               <textarea 
@@ -113,6 +127,42 @@ export default function EditDoiTuongModal({ editData, setEditData, handleSave }:
                 value={editData.mota || ''}
                 onChange={(e) => setEditData({...editData, mota: e.target.value})}
               />
+            </div>
+
+            {/* Coordinate Edit Section */}
+            <div className="space-y-3 border-t border-slate-100 pt-4 pb-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Tọa độ GIS Đối tượng</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase pl-1">Kinh độ (Lng)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                    value={editData.lng || ''}
+                    onChange={(e) => setEditData({ ...editData, lng: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase pl-1">Vĩ độ (Lat)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                    value={editData.lat || ''}
+                    onChange={(e) => setEditData({ ...editData, lat: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              {onPickLocationOnMap && (
+                <button
+                  type="button"
+                  onClick={() => onPickLocationOnMap('doituong-list', editData)}
+                  className="w-full bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  Chọn lại vị trí trên bản đồ
+                </button>
+              )}
             </div>
 
             <div className="pt-2">

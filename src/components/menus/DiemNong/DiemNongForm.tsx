@@ -25,7 +25,16 @@ export default function DiemNongForm({ formData, setFormData }: Props) {
       </div>
       <div className="space-y-1.5">
         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Phạm vi điểm nóng (mét)</label>
-        <input type="number" placeholder="Ví dụ: 300" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-700 outline-none" value={formData.radius || 300} onChange={(e) => setFormData({ ...formData, radius: parseInt(e.target.value) || 300 })} />
+        <input 
+          type="number" 
+          placeholder="Ví dụ: 300" 
+          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-700 outline-none" 
+          value={formData.radius === undefined || formData.radius === '' ? '' : formData.radius} 
+          onChange={(e) => {
+            const val = e.target.value;
+            setFormData({ ...formData, radius: val === '' ? '' : (parseInt(val) || 0) });
+          }} 
+        />
       </div>
       <div className="space-y-1.5 md:col-span-2">
         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Ghi chú & mô tả</label>

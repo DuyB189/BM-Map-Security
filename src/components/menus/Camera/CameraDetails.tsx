@@ -90,6 +90,23 @@ export default function CameraDetails({ details, onClose }: Props) {
             </div>
           )}
 
+          {/* Address Info Card */}
+          {details.diachi && (
+            <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-white text-sky-600 border border-slate-200 rounded-xl shrink-0 shadow-sm">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Địa chỉ lắp đặt</span>
+                  <h4 className="text-sm font-bold text-slate-700 mt-0.5 leading-snug">
+                    {details.diachi}
+                  </h4>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Phone Info Card */}
           {details.sdt_chu && (
             <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm">

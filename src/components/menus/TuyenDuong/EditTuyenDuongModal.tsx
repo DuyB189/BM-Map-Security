@@ -7,9 +7,10 @@ interface EditTuyenDuongModalProps {
   setEditData: (val: any | null) => void;
   handleSave: (data: any) => void;
   onEditCoordinates?: (data: any) => void;
+  onPickLocationOnMap?: (category: string, currentData: any) => void;
 }
 
-export default function EditTuyenDuongModal({ editData, setEditData, handleSave, onEditCoordinates }: EditTuyenDuongModalProps) {
+export default function EditTuyenDuongModal({ editData, setEditData, handleSave, onEditCoordinates, onPickLocationOnMap }: EditTuyenDuongModalProps) {
   if (!editData) return null;
 
   return (
@@ -96,6 +97,43 @@ export default function EditTuyenDuongModal({ editData, setEditData, handleSave,
                     className="flex items-center justify-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md cursor-pointer"
                   >
                     <Map className="w-4 h-4" /> Chọn lại tọa độ trên bản đồ
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!editData.coordinates && (
+              <div className="space-y-3 border-t border-slate-100 pt-4 pb-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Tọa độ GIS Điểm Chốt</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase pl-1">Kinh độ (Lng)</label>
+                    <input
+                      type="number"
+                      step="0.000001"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                      value={editData.lng || ''}
+                      onChange={(e) => setEditData({ ...editData, lng: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase pl-1">Vĩ độ (Lat)</label>
+                    <input
+                      type="number"
+                      step="0.000001"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                      value={editData.lat || ''}
+                      onChange={(e) => setEditData({ ...editData, lat: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+                {onPickLocationOnMap && (
+                  <button
+                    type="button"
+                    onClick={() => onPickLocationOnMap('tuyenduong-list', editData)}
+                    className="w-full bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    Chọn lại vị trí trên bản đồ
                   </button>
                 )}
               </div>

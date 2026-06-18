@@ -5,9 +5,11 @@ import DetailsRenderer from './menus/DetailsRenderer';
 interface DetailsModalProps {
   details: any | null;
   onClose: () => void;
+  vuviecList?: any[];
+  doituongList?: any[];
 }
 
-export default function DetailsModal({ details, onClose }: DetailsModalProps) {
+export default function DetailsModal({ details, onClose, vuviecList, doituongList }: DetailsModalProps) {
   return (
     <AnimatePresence>
       {details && (
@@ -19,7 +21,7 @@ export default function DetailsModal({ details, onClose }: DetailsModalProps) {
           style={{ height: 'calc(100vh - 120px)' }}
           className="absolute top-24 right-6 w-96 glass-dark border border-slate-200 z-[900] flex flex-col shadow-2xl rounded-3xl overflow-hidden"
         >
-          <DetailsRenderer details={details} onClose={onClose} />
+          <DetailsRenderer details={details} onClose={onClose} vuviecList={vuviecList} doituongList={doituongList} />
         </motion.div>
       )}
     </AnimatePresence>

@@ -14,11 +14,14 @@ interface FormRendererProps {
   setFormData: (val: any) => void;
   routeCoordinates?: [number, number][];
   setRouteCoordinates?: (val: any) => void;
+  doituongList: any[];
+  onAddNewDoiTuong: (dt: any) => void;
+  selectedCoords?: [number, number] | null;
 }
 
-export default function FormRenderer({ formData, setFormData, routeCoordinates, setRouteCoordinates }: FormRendererProps) {
+export default function FormRenderer({ formData, setFormData, routeCoordinates, setRouteCoordinates, doituongList, onAddNewDoiTuong, selectedCoords }: FormRendererProps) {
   switch (formData.category) {
-    case 'vuviec-list': return <VuViecForm formData={formData} setFormData={setFormData} />;
+    case 'vuviec-list': return <VuViecForm formData={formData} setFormData={setFormData} doituongList={doituongList} onAddNewDoiTuong={onAddNewDoiTuong} coords={selectedCoords} />;
     case 'xa-list': return <XaForm formData={formData} setFormData={setFormData} />;
     case 'camera-list': return <CameraForm formData={formData} setFormData={setFormData} />;
     case 'doituong-list': return <DoiTuongForm formData={formData} setFormData={setFormData} />;

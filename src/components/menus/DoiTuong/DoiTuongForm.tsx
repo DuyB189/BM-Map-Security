@@ -49,6 +49,17 @@ export default function DoiTuongForm({ formData, setFormData }: Props) {
       </div>
 
       <div className="space-y-1.5 md:col-span-2">
+        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Địa chỉ thường trú / Nơi ở hiện tại</label>
+        <input 
+          type="text" 
+          placeholder="phường Bình Minh" 
+          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all" 
+          value={formData.diachi || ''} 
+          onChange={(e) => setFormData({...formData, diachi: e.target.value})} 
+        />
+      </div>
+
+      <div className="space-y-1.5 md:col-span-2">
         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Mô tả hành vi & Đặc điểm</label>
         <textarea 
           placeholder="Mô tả đặc điểm nhận dạng, hành vi phạm tội, tiền án tiền sự..."

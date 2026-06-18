@@ -12,14 +12,16 @@ import TuyenDuongDetails from './TuyenDuong/TuyenDuongDetails';
 interface DetailsRendererProps {
   details: any;
   onClose: () => void;
+  vuviecList?: any[];
+  doituongList?: any[];
 }
 
-export default function DetailsRenderer({ details, onClose }: DetailsRendererProps) {
+export default function DetailsRenderer({ details, onClose, vuviecList, doituongList }: DetailsRendererProps) {
   switch (details.category) {
-    case 'vuviec-list': return <VuViecDetails details={details} onClose={onClose} />;
+    case 'vuviec-list': return <VuViecDetails details={details} onClose={onClose} vuviecList={vuviecList} doituongList={doituongList} />;
     case 'xa-list': return <XaDetails details={details} onClose={onClose} />;
     case 'camera-list': return <CameraDetails details={details} onClose={onClose} />;
-    case 'doituong-list': return <DoiTuongDetails details={details} onClose={onClose} />;
+    case 'doituong-list': return <DoiTuongDetails details={details} onClose={onClose} vuviecList={vuviecList} />;
 
     case 'coquan-list': return <CoQuanDetails details={details} onClose={onClose} />;
     case 'cskd-list': return <CskdDetails details={details} onClose={onClose} />;
