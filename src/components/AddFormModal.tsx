@@ -10,6 +10,7 @@ interface AddFormModalProps {
   setFormData: (val: any) => void;
   menu: GISMenu[];
   selectedCoords: [number, number] | null;
+  setSelectedCoords?: (val: [number, number] | null) => void;
   handleAdd: () => void;
   routeCoordinates?: [number, number][];
   setRouteCoordinates?: (val: any) => void;
@@ -24,6 +25,7 @@ export default function AddFormModal({
   setFormData,
   menu,
   selectedCoords,
+  setSelectedCoords,
   handleAdd,
   routeCoordinates,
   setRouteCoordinates,
@@ -110,11 +112,44 @@ export default function AddFormModal({
               </div>
 
               {!isRouteMode ? (
-                <div className="flex items-center gap-3 bg-sky-50 p-3 rounded-2xl border border-sky-100 mb-4">
-                  <MapPin className="w-5 h-5 text-sky-600" />
-                  <div className="text-[10px] text-sky-800 font-mono">
-                    <span className="font-bold opacity-50 mr-2">LNG/LAT:</span>
-                    {selectedCoords?.[0].toFixed(6)}, {selectedCoords?.[1].toFixed(6)}
+                <div className="bg-sky-50 p-4 rounded-2xl border border-sky-100 mb-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sky-800 font-bold text-xs">
+                    <MapPin className="w-4 h-4 text-sky-600" />
+                    <span>Tọa độ ghim</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Kinh độ (LNG)</label>
+                      <input 
+                        type="number" 
+                        step="any"
+                        placeholder="106.118308"
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 font-mono outline-none focus:ring-2 focus:ring-sky-500/20"
+                        value={selectedCoords ? selectedCoords[0] : ''}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (setSelectedCoords) {
+                            setSelectedCoords([isNaN(val) ? 0 : val, selectedCoords ? selectedCoords[1] : 11.3387817]);
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Vĩ độ (LAT)</label>
+                      <input 
+                        type="number" 
+                        step="any"
+                        placeholder="11.338782"
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 font-mono outline-none focus:ring-2 focus:ring-sky-500/20"
+                        value={selectedCoords ? selectedCoords[1] : ''}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (setSelectedCoords) {
+                            setSelectedCoords([selectedCoords ? selectedCoords[0] : 106.1183077, isNaN(val) ? 0 : val]);
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (

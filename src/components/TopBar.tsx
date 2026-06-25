@@ -14,6 +14,7 @@ interface TopBarProps {
 	isAdding: boolean;
 	setIsAdding: (val: boolean) => void;
 	setSelectedCoords: (val: [number, number] | null) => void;
+	setShowForm?: (val: boolean) => void;
 }
 
 export default function TopBar({
@@ -28,6 +29,7 @@ export default function TopBar({
 	isAdding,
 	setIsAdding,
 	setSelectedCoords,
+	setShowForm,
 }: TopBarProps) {
 	return (
 		<>
@@ -128,11 +130,28 @@ export default function TopBar({
 						initial={{ y: -20, opacity: 0 }}
 						animate={{ y: 0, opacity: 1 }}
 						exit={{ y: -20, opacity: 0 }}
-						className="absolute top-24 left-1/2 -translate-x-1/2 z-[1000] bg-white px-6 py-4 rounded-2xl shadow-2xl text-slate-800 text-sm font-bold flex items-center gap-3 border border-sky-400 border-dashed">
-						<div className="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center animate-bounce">
-							<MapIcon className="w-5 h-5" />
+						className="absolute top-24 left-1/2 -translate-x-1/2 z-[1000] bg-white px-6 py-4 rounded-2xl shadow-2xl text-slate-800 text-sm font-bold flex flex-col sm:flex-row items-center gap-3 border border-sky-400 border-dashed">
+						<div className="flex items-center gap-3">
+							<div className="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center animate-bounce shrink-0">
+								<MapIcon className="w-5 h-5" />
+							</div>
+							<span className="whitespace-nowrap">Nhấn vào bất kỳ điểm nào trên bản đồ để đặt ghim mới</span>
 						</div>
-						Nhấn vào bất kỳ điểm nào trên bản đồ để đặt ghim mới
+						{setShowForm && (
+							<>
+								<div className="hidden sm:block h-6 w-px bg-slate-200" />
+								<button
+									onClick={() => {
+										setSelectedCoords([106.1183077, 11.3387817]);
+										setShowForm(true);
+										setIsAdding(false);
+									}}
+									className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 text-xs rounded-xl transition-all cursor-pointer whitespace-nowrap"
+								>
+									Nhập tọa độ thủ công
+								</button>
+							</>
+						)}
 					</motion.div>
 				)}
 			</AnimatePresence>

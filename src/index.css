@@ -56,7 +56,7 @@ body {
 /* Custom Markers */
 .custom-marker {
   cursor: pointer;
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.2));
   will-change: transform;
 }
 
@@ -75,6 +75,34 @@ body {
   pointer-events: none;
   transform-origin: bottom center;
 }
+
+.marker-pulse {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px 3px currentColor;
+  opacity: 0;
+  transform: scale(0.8);
+  animation: marker-pulse-expand 2.2s infinite cubic-bezier(0.25, 0, 0, 1);
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes marker-pulse-expand {
+  0% {
+    opacity: 0.75;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+
 
 .marker-pin {
   width: 32px;

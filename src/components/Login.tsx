@@ -75,14 +75,11 @@ export default function Login({ onLogin }: LoginProps) {
 
 				{/* Brand Header */}
 				<div className="text-center mb-6 space-y-1 w-full">
-					<span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">
-						Ủy ban Nhân dân Phường Bình Minh
-					</span>
 					<h1 className="text-base font-extrabold text-slate-800 uppercase tracking-wide leading-tight">
 						Bản đồ An ninh Trật tự
 					</h1>
 					<span className="text-[10px] font-bold text-sky-600 uppercase tracking-widest block">
-						Hệ thống Quản lý Dữ liệu GIS
+						Hệ thống Quản lý Dữ liệu bản đồ
 					</span>
 				</div>
 
@@ -144,7 +141,7 @@ export default function Login({ onLogin }: LoginProps) {
 						<motion.div
 							initial={{ opacity: 0, y: -5 }}
 							animate={{ opacity: 1, y: 0 }}
-							className="flex items-center gap-2.5 p-3 bg-red-50 border border-red-100 text-red-700 rounded-xl text-[10px] font-bold uppercase tracking-wider text-left leading-normal">
+							className="flex items-center gap-2.5 p-3 bg-red-50 border border-red-100 text-red-700 rounded-xl text-[10px] font-bold tracking-wider text-left leading-normal">
 							<AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
 							<span>{error}</span>
 						</motion.div>
