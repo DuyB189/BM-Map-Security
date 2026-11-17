@@ -117,7 +117,7 @@ const CATEGORY_CONFIGS: CategoryMeta[] = [
 		target: "coquan-list",
 		title: "Cơ quan nhà nước & Trụ sở",
 		shortTitle: "Cơ quan",
-		supportsImport: false,
+		supportsImport: true,
 		accentText: "text-slate-700",
 		accentBg: "bg-slate-100",
 		accentBorder: "border-slate-300",
@@ -150,7 +150,7 @@ const CATEGORY_CONFIGS: CategoryMeta[] = [
 		target: "tuyenduong-list",
 		title: "Tuyến đường & Chốt tuần tra",
 		shortTitle: "Tuyến đường",
-		supportsImport: false,
+		supportsImport: true,
 		accentText: "text-emerald-600",
 		accentBg: "bg-emerald-50",
 		accentBorder: "border-emerald-200",
@@ -467,17 +467,24 @@ export default function DataCatalogModal({
 					"vi",
 				);
 			} else {
-				const da =
-					parseFlexibleLocalDate(a.thoigian || a.ngay_tao, a.id)?.getTime() ?? 0;
-				const db =
-					parseFlexibleLocalDate(b.thoigian || b.ngay_tao, b.id)?.getTime() ?? 0;
+				const da = parseFlexibleLocalDate(a.thoigian || a.ngay_tao, a.id)?.getTime() ?? 0;
+				const db = parseFlexibleLocalDate(b.thoigian || b.ngay_tao, b.id)?.getTime() ?? 0;
 				cmp = da - db;
 			}
 			return sortDir === "asc" ? cmp : -cmp;
 		});
 
 		return sorted;
-	}, [rawItems, activeTarget, searchText, typeFilter, statusFilter, periodFilter, sortField, sortDir]);
+	}, [
+		rawItems,
+		activeTarget,
+		searchText,
+		typeFilter,
+		statusFilter,
+		periodFilter,
+		sortField,
+		sortDir,
+	]);
 
 	const totalPages = Math.max(1, Math.ceil(processedItems.length / pageSize));
 	const safePage = Math.min(currentPage, totalPages);
@@ -491,9 +498,7 @@ export default function DataCatalogModal({
 	useEffect(() => {
 		if (!inspectedItem) return;
 		const keyStr = String(getRecordKey(inspectedItem, activeTarget));
-		const updated = rawItems.find(
-			(it) => String(getRecordKey(it, activeTarget)) === keyStr,
-		);
+		const updated = rawItems.find((it) => String(getRecordKey(it, activeTarget)) === keyStr);
 		if (updated) {
 			setInspectedItem(updated);
 		} else {
@@ -629,13 +634,9 @@ export default function DataCatalogModal({
 		setSelectedIds((prev) => {
 			const next = new Set(prev);
 			if (allPageSelected) {
-				paginatedItems.forEach((it) =>
-					next.delete(String(getRecordKey(it, activeTarget))),
-				);
+				paginatedItems.forEach((it) => next.delete(String(getRecordKey(it, activeTarget))));
 			} else {
-				paginatedItems.forEach((it) =>
-					next.add(String(getRecordKey(it, activeTarget))),
-				);
+				paginatedItems.forEach((it) => next.add(String(getRecordKey(it, activeTarget))));
 			}
 			return next;
 		});
@@ -643,9 +644,7 @@ export default function DataCatalogModal({
 
 	const handleExportExcel = (onlySelected = false) => {
 		const sourceList = onlySelected
-			? processedItems.filter((it) =>
-					selectedIds.has(String(getRecordKey(it, activeTarget))),
-				)
+			? processedItems.filter((it) => selectedIds.has(String(getRecordKey(it, activeTarget))))
 			: processedItems;
 
 		if (sourceList.length === 0) return;
@@ -704,12 +703,18 @@ export default function DataCatalogModal({
 					"Trạng thái hoạt động": item.trangthai || "",
 					"Giấy phép liên quan": item.giay_phep || "",
 					"Họ tên chủ": item.chu_co_so || "",
+					"Ngày sinh chủ": item.chu_ngaysinh || "",
 					"CCCD chủ": item.chu_cccd || "",
 					"SĐT chủ": item.chu_sdt || "",
+					"Địa chỉ chủ": item.chu_diachi || "",
 					"Họ tên quản lý": item.quan_ly || "",
+					"Ngày sinh quản lý": item.quan_ly_ngaysinh || "",
+					"CCCD quản lý": item.quan_ly_cccd || "",
 					"SĐT quản lý": item.quan_ly_sdt || "",
+					"Địa chỉ quản lý": item.quan_ly_diachi || "",
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
+					"Ngày tạo": item.ngay_tao ? formatDate(String(item.ngay_tao)) : "",
 				};
 			}
 			if (activeTarget === "diemnong-list") {
@@ -723,6 +728,7 @@ export default function DataCatalogModal({
 					"Mô tả tình hình": item.mota || "",
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
+					"Ngày tạo": item.ngay_tao ? formatDate(String(item.ngay_tao)) : "",
 				};
 			}
 			if (activeTarget === "coquan-list") {
@@ -733,19 +739,35 @@ export default function DataCatalogModal({
 					"Địa bàn": item.xaphuong || "",
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
+					"Ngày tạo": item.ngay_tao ? formatDate(String(item.ngay_tao)) : "",
 				};
 			}
+			const startLng = item.lng !== undefined ? item.lng : (item.coordinates?.[0]?.[0] ?? "");
+			const startLat = item.lat !== undefined ? item.lat : (item.coordinates?.[0]?.[1] ?? "");
+			const coordTrail = Array.isArray(item.coordinates)
+				? item.coordinates
+						.map((pair: [number, number]) => `${pair[0]},${pair[1]}`)
+						.join(" ; ")
+				: "";
 			return {
 				STT: idx + 1,
 				"Tên tuyến đường": item.ten || "",
 				"Phân loại": item.loai || "",
 				"Kiểu hình học": item.type === "line" ? "Tuyến vẽ" : "Điểm chốt",
 				"Mức độ cảnh báo": item.mucdo || "",
-				"Số tọa độ": item.coordinates?.length || 1,
+				"Kinh độ": startLng,
+				"Vĩ độ": startLat,
+				"Danh sách tọa độ tuyến": coordTrail,
+				"Ngày tạo": item.ngay_tao ? formatDate(String(item.ngay_tao)) : "",
 			};
 		});
 
 		const ws = XLSX.utils.json_to_sheet(rows);
+		if (rows.length > 0) {
+			ws["!cols"] = Object.keys(rows[0]).map((key) => ({
+				wch: Math.max(key.length + 6, 20),
+			}));
+		}
 		const wb = XLSX.utils.book_new();
 		XLSX.utils.book_append_sheet(wb, ws, activeConfig.shortTitle);
 		const fileName = `DanhMuc_${activeConfig.shortTitle.replace(/\s+/g, "_")}_${getLocalDateStr()}.xlsx`;
@@ -799,7 +821,8 @@ export default function DataCatalogModal({
 								</span>
 							</div>
 							<p className="text-[11px] text-slate-500 font-medium mt-0.5">
-								Trung tâm quản trị dữ liệu GIS Phường Bình Minh • Tổng toàn hệ thống:{" "}
+								Trung tâm quản trị dữ liệu GIS Phường Bình Minh • Tổng toàn hệ
+								thống:{" "}
 								<strong className="text-slate-700 font-mono">
 									{totalSystemRecords.toLocaleString("vi-VN")}
 								</strong>{" "}
@@ -1210,7 +1233,8 @@ export default function DataCatalogModal({
 														item.mst ||
 														item.groupId) && (
 														<div className="text-[11px] text-slate-400 truncate mt-0.5">
-															{activeTarget === "cskd-list" && item.mst
+															{activeTarget === "cskd-list" &&
+															item.mst
 																? `MST: ${item.mst}`
 																: item.groupId
 																	? `Nhóm: ${item.groupId}${item.mota ? ` • ${item.mota}` : ""}`
@@ -1224,7 +1248,8 @@ export default function DataCatalogModal({
 													{activeTarget === "camera-list" ? (
 														<div>
 															<div className="font-semibold text-slate-700 truncate">
-																{item.chu_camera || "Công cộng / Phường"}
+																{item.chu_camera ||
+																	"Công cộng / Phường"}
 															</div>
 															{item.sdt_chu && (
 																<div className="text-[11px] font-mono text-slate-500">
@@ -1235,7 +1260,9 @@ export default function DataCatalogModal({
 													) : activeTarget === "cskd-list" ? (
 														<div>
 															<div className="font-semibold text-slate-700 truncate">
-																{item.loai || item.loai_hinh_kd || "—"}
+																{item.loai ||
+																	item.loai_hinh_kd ||
+																	"—"}
 															</div>
 															{item.chu_co_so && (
 																<div className="text-[11px] text-slate-500 truncate">
@@ -1286,9 +1313,17 @@ export default function DataCatalogModal({
 																	item.chu_diachi ||
 																	"Phường Bình Minh"}
 															</div>
-															{formatCoordPair(item.lat, item.lng, 5) && (
+															{formatCoordPair(
+																item.lat,
+																item.lng,
+																5,
+															) && (
 																<div className="text-[10px] font-mono text-slate-400 mt-0.5">
-																	{formatCoordPair(item.lat, item.lng, 5)}
+																	{formatCoordPair(
+																		item.lat,
+																		item.lng,
+																		5,
+																	)}
 																	{activeTarget ===
 																		"diemnong-list" &&
 																	item.radius
@@ -1308,7 +1343,11 @@ export default function DataCatalogModal({
 														</span>
 													) : activeTarget === "coquan-list" ? (
 														<span className="font-mono text-[11px] text-slate-500">
-															{formatCoordPair(item.lat, item.lng, 4) || "—"}
+															{formatCoordPair(
+																item.lat,
+																item.lng,
+																4,
+															) || "—"}
 														</span>
 													) : (
 														renderStatusBadge(
@@ -1439,7 +1478,11 @@ export default function DataCatalogModal({
 														? formatDate(String(item.thoigian))
 														: item.ngay_tao
 															? formatDate(String(item.ngay_tao))
-															: formatCoordPair(item.lat, item.lng, 4)}
+															: formatCoordPair(
+																	item.lat,
+																	item.lng,
+																	4,
+																)}
 												</span>
 												<div className="flex items-center gap-1">
 													<button
@@ -1534,8 +1577,7 @@ export default function DataCatalogModal({
 										{
 											label: "Chủ sở hữu / Đại diện",
 											val:
-												inspectedItem.chu_camera ||
-												inspectedItem.chu_co_so,
+												inspectedItem.chu_camera || inspectedItem.chu_co_so,
 										},
 										{ label: "Người quản lý", val: inspectedItem.quan_ly },
 										{
@@ -1771,4 +1813,3 @@ export default function DataCatalogModal({
 		</div>
 	);
 }
-

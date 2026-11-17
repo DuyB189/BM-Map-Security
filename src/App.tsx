@@ -44,6 +44,7 @@ import DataCatalogModal from "./components/DataCatalogModal";
 import SystemHistoryModal from "./components/SystemHistoryModal";
 import OfflineMapModal from "./components/OfflineMapModal";
 import ChangePasswordModal from "./components/ChangePasswordModal";
+import BackupRestoreModal from "./components/BackupRestoreModal";
 import Login from "./components/Login";
 import binhminhBoundaryData from "./data/binhminh.json";
 
@@ -711,6 +712,7 @@ export default function App() {
 	const [showOfflineMapModal, setShowOfflineMapModal] = useState(false);
 	const [showSystemHistoryModal, setShowSystemHistoryModal] = useState(false);
 	const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+	const [showBackupRestoreModal, setShowBackupRestoreModal] = useState(false);
 	const [mapStatus, setMapStatus] = useState<{
 		exists: boolean;
 		path: string;
@@ -2221,10 +2223,14 @@ export default function App() {
 			newData.camera = [...newData.camera, ...importedItems];
 		} else if (targetCategory === "doituong-list") {
 			newData.doituong = [...newData.doituong, ...importedItems];
+		} else if (targetCategory === "coquan-list") {
+			newData.coquan = [...newData.coquan, ...importedItems];
 		} else if (targetCategory === "cskd-list") {
 			newData.cskd = [...newData.cskd, ...importedItems];
 		} else if (targetCategory === "diemnong-list") {
 			newData.diemnong = [...newData.diemnong, ...importedItems];
+		} else if (targetCategory === "tuyenduong-list") {
+			newData.tuyenduong = [...newData.tuyenduong, ...importedItems];
 		}
 		saveOfflineData(newData);
 		const catName = getCategoryDisplayName(targetCategory);
@@ -2481,6 +2487,15 @@ export default function App() {
 		}
 	};
 
+	const totalManagedRecords =
+		data.vuviec.length +
+		data.camera.length +
+		data.doituong.length +
+		data.coquan.length +
+		data.cskd.length +
+		data.diemnong.length +
+		data.tuyenduong.length;
+
 	if (!isLoggedIn) {
 		return <Login onLogin={handleLogin} />;
 	}
@@ -2491,17 +2506,30 @@ export default function App() {
 			<TopBar
 				isMenuOpen={isMenuOpen}
 				setIsMenuOpen={setIsMenuOpen}
-				isLocationMenuOpen={isLocationMenuOpen}
-				setIsLocationMenuOpen={setIsLocationMenuOpen}
-				selectedLocation={selectedLocation}
-				setSelectedLocation={setSelectedLocation}
-				data={data}
-				flyTo={flyTo}
 				isAdding={isAdding}
 				setIsAdding={setIsAdding}
 				setSelectedCoords={setSelectedCoords}
 				setShowForm={setShowForm}
+				totalRecordsCount={totalManagedRecords}
 				onOpenCatalog={() => setShowCatalogModal(true)}
+				onOpenStats={() => {
+					setShowStatsModal(true);
+					authService.logAction({
+						eventType: "SYSTEM_ACTION",
+						status: "info",
+						message: "Mở bảng điều khiển Báo cáo Thống kê ANTT",
+					});
+				}}
+				showSettings={showSettings}
+				setShowSettings={setShowSettings}
+				isUpdatingMap={isUpdatingMap}
+				onOpenBackupRestore={() => setShowBackupRestoreModal(true)}
+				onOpenOfflineMap={() => setShowOfflineMapModal(true)}
+				onOpenSystemHistory={() => setShowSystemHistoryModal(true)}
+				onOpenChangePassword={() => setShowChangePasswordModal(true)}
+				onReloadApp={() => window.location.reload()}
+				onLogout={handleLogout}
+				activeUsername={sessionStorage.getItem("gis_user") || "Quản trị viên"}
 			/>
 
 			<Sidebar
@@ -2518,139 +2546,7 @@ export default function App() {
 					if (menuId) setActiveMenu(menuId);
 					setShowCatalogModal(true);
 				}}
-				onOpenStats={() => setShowStatsModal(true)}
 			/>
-
-			{/* Logout Button */}
-			<button
-				onClick={handleLogout}
-				className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 cursor-pointer group"
-				style={{ right: "240px" }}
-				title="Đăng xuất khỏi hệ thống">
-				<LogOut className="w-6 h-6" />
-			</button>
-
-			{/* Reload App & Map Button */}
-			<button
-				onClick={() => window.location.reload()}
-				className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 cursor-pointer group"
-				style={{ right: "168px" }}
-				title="Tải lại dữ liệu & bản đồ">
-				<RefreshCw className="w-6 h-6 group-hover:rotate-45 transition-transform" />
-			</button>
-
-			{/* Statistics & Reports Button */}
-			<button
-				onClick={() => {
-					setShowStatsModal(true);
-					authService.logAction({
-						eventType: "SYSTEM_ACTION",
-						status: "info",
-						message: "Mở bảng điều khiển Báo cáo Thống kê ANTT",
-					});
-				}}
-				className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-sky-600 hover:bg-sky-50 hover:border-sky-200 cursor-pointer"
-				style={{ right: "96px" }}
-				title="Báo cáo thống kê">
-				<BarChart3 className="w-6 h-6" />
-			</button>
-
-			{/* Settings Menu Button & Action Rows Dropdown */}
-			<button
-				onClick={() => setShowSettings(!showSettings)}
-				className={`absolute top-4 right-6 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all cursor-pointer ${showSettings ? "bg-sky-50 text-sky-600 border-sky-200" : "text-slate-600 hover:bg-white"}`}
-				title="Thiết lập hệ thống">
-				<Settings className={`w-6 h-6 ${isUpdatingMap ? "animate-spin" : ""}`} />
-			</button>
-
-			<AnimatePresence>
-				{showSettings && (
-					<motion.div
-						initial={{ opacity: 0, y: 10, scale: 0.95 }}
-						animate={{ opacity: 1, y: 0, scale: 1 }}
-						exit={{ opacity: 0, y: 10, scale: 0.95 }}
-						transition={{ duration: 0.16 }}
-						className="absolute top-24 right-6 w-80 glass-dark p-3 rounded-3xl z-[1000] shadow-2xl border border-slate-200/80 space-y-1.5">
-						<div className="px-3 py-2 border-b border-slate-100">
-							<h4 className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider">
-								Thiết lập & Quản trị Hệ thống
-							</h4>
-							<p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-								Tài khoản: {sessionStorage.getItem("gis_user") || "Quản trị viên"}
-							</p>
-						</div>
-
-						<button
-							type="button"
-							onClick={() => {
-								setShowSettings(false);
-								setShowOfflineMapModal(true);
-							}}
-							className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-sky-50/80 text-left transition-colors group cursor-pointer">
-							<div className="flex items-center gap-3 min-w-0">
-								<div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center shrink-0 group-hover:bg-sky-600 group-hover:text-white transition-colors">
-									<Database className="w-4 h-4" />
-								</div>
-								<div className="min-w-0">
-									<div className="text-xs font-bold text-slate-800 group-hover:text-sky-700 truncate">
-										Cập nhật bản đồ nền (.mbtiles)
-									</div>
-									<div className="text-[10px] font-medium text-slate-500 truncate">
-										Trạng thái & nạp tệp bản đồ ngoại tuyến
-									</div>
-								</div>
-							</div>
-							<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-sky-600 shrink-0" />
-						</button>
-
-						<button
-							type="button"
-							onClick={() => {
-								setShowSettings(false);
-								setShowSystemHistoryModal(true);
-							}}
-							className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-amber-50/80 text-left transition-colors group cursor-pointer">
-							<div className="flex items-center gap-3 min-w-0">
-								<div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-									<History className="w-4 h-4" />
-								</div>
-								<div className="min-w-0">
-									<div className="text-xs font-bold text-slate-800 group-hover:text-amber-700 truncate">
-										Lịch sử hệ thống
-									</div>
-									<div className="text-[10px] font-medium text-slate-500 truncate">
-										Nhật ký đăng nhập, sai mật khẩu & khóa máy
-									</div>
-								</div>
-							</div>
-							<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 shrink-0" />
-						</button>
-
-						<button
-							type="button"
-							onClick={() => {
-								setShowSettings(false);
-								setShowChangePasswordModal(true);
-							}}
-							className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-indigo-50/80 text-left transition-colors group cursor-pointer">
-							<div className="flex items-center gap-3 min-w-0">
-								<div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-									<KeyRound className="w-4 h-4" />
-								</div>
-								<div className="min-w-0">
-									<div className="text-xs font-bold text-slate-800 group-hover:text-indigo-700 truncate">
-										Bảo mật & Đổi mật khẩu
-									</div>
-									<div className="text-[10px] font-medium text-slate-500 truncate">
-										Đổi mật khẩu & cấp mới Mã Chủ Quản
-									</div>
-								</div>
-							</div>
-							<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 shrink-0" />
-						</button>
-					</motion.div>
-				)}
-			</AnimatePresence>
 
 			<OfflineMapModal
 				show={showOfflineMapModal}
@@ -2669,6 +2565,15 @@ export default function App() {
 			<ChangePasswordModal
 				show={showChangePasswordModal}
 				onClose={() => setShowChangePasswordModal(false)}
+			/>
+
+			<BackupRestoreModal
+				show={showBackupRestoreModal}
+				onClose={() => setShowBackupRestoreModal(false)}
+				onDataRestored={(restoredData) => {
+					setData(restoredData);
+					setSelectedDetails(null);
+				}}
 			/>
 
 			<AddFormModal

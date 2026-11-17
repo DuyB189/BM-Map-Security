@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import os from "os";
 import crypto from "crypto";
+import zlib from "zlib";
 import { createRequire } from "module";
 import type { DatabaseSync as SQLiteDatabaseSync } from "node:sqlite";
 
@@ -88,40 +89,89 @@ app.on("activate", () => {
 	}
 });
 
-// --------- IPC Database Handlers for 100% Offline Storage ---------
-const getDataPath = () => {
+// --------- Encrypted Embedded SQLite Storage (AES-256-GCM + DPAPI + WAL) & Offline Backup ---------
+const GIS_COLLECTION_KEYS = [
+	"menu",
+	"xaphuong",
+	"vuviec",
+	"camera",
+	"doituong",
+	"coquan",
+	"cskd",
+	"diemnong",
+	"tuyenduong",
+] as const;
+
+const PORTABLE_BACKUP_MAGIC = "BM-ANTT-ENCRYPTED-BACKUP-V1";
+const MAX_LOCAL_SNAPSHOTS = 15;
+
+let gisSqliteDb: SQLiteDatabaseSync | null = null;
+let cachedDataDek: Buffer | null = null;
+let cachedEncryptionScheme: "dpapi-aes-256-gcm" | "machine-aes-256-gcm" = "machine-aes-256-gcm";
+const inMemoryCollectionHashes = new Map<string, string>();
+
+const ensureUserDataDir = (): string => {
 	const userData = app.getPath("userData");
 	if (!fs.existsSync(userData)) {
 		fs.mkdirSync(userData, { recursive: true });
 	}
-	return path.join(userData, "data.json");
+	return userData;
 };
 
-ipcMain.handle("db:get-data", () => {
-	try {
-		const filePath = getDataPath();
-		if (!fs.existsSync(filePath)) {
-			console.log("Offline database file does not exist yet. Path:", filePath);
-			return null;
-		}
-		const data = fs.readFileSync(filePath, "utf-8");
-		return JSON.parse(data);
-	} catch (error) {
-		console.error("Error reading offline database:", error);
-		return null;
+const getEncryptedDbPath = () => path.join(ensureUserDataDir(), "gis_security.db");
+const getLegacyPlainJsonPath = () => path.join(ensureUserDataDir(), "data.json");
+const getBackupsDir = () => {
+	const dir = path.join(ensureUserDataDir(), "backups");
+	if (!fs.existsSync(dir)) {
+		fs.mkdirSync(dir, { recursive: true });
 	}
-});
+	return dir;
+};
 
-ipcMain.handle("db:save-data", (_event, newData) => {
+const getLocalDayStamp = (d = new Date()): string => {
+	const yyyy = d.getFullYear();
+	const mm = String(d.getMonth() + 1).padStart(2, "0");
+	const dd = String(d.getDate()).padStart(2, "0");
+	return `${yyyy}-${mm}-${dd}`;
+};
+
+const getLocalFileTimestamp = (d = new Date()): string => {
+	const hh = String(d.getHours()).padStart(2, "0");
+	const mi = String(d.getMinutes()).padStart(2, "0");
+	const ss = String(d.getSeconds()).padStart(2, "0");
+	return `${getLocalDayStamp(d)}_${hh}${mi}${ss}`;
+};
+
+const computeDataSummary = (gisData: any) => {
+	const counts = {
+		vuviec: Array.isArray(gisData?.vuviec) ? gisData.vuviec.length : 0,
+		camera: Array.isArray(gisData?.camera) ? gisData.camera.length : 0,
+		doituong: Array.isArray(gisData?.doituong) ? gisData.doituong.length : 0,
+		coquan: Array.isArray(gisData?.coquan) ? gisData.coquan.length : 0,
+		cskd: Array.isArray(gisData?.cskd) ? gisData.cskd.length : 0,
+		diemnong: Array.isArray(gisData?.diemnong) ? gisData.diemnong.length : 0,
+		tuyenduong: Array.isArray(gisData?.tuyenduong) ? gisData.tuyenduong.length : 0,
+	};
+	const totalRecords = Object.values(counts).reduce((s, n) => s + n, 0);
+	return { totalRecords, counts };
+};
+
+const securelyShredFile = (targetFile: string) => {
 	try {
-		const filePath = getDataPath();
-		fs.writeFileSync(filePath, JSON.stringify(newData, null, 2), "utf-8");
-		return true;
-	} catch (error) {
-		console.error("Error writing to offline database:", error);
-		throw error;
+		if (!fs.existsSync(targetFile)) return;
+		const stat = fs.statSync(targetFile);
+		if (stat.size > 0) {
+			const fd = fs.openSync(targetFile, "r+");
+			const randomNoise = crypto.randomBytes(stat.size);
+			fs.writeSync(fd, randomNoise, 0, randomNoise.length, 0);
+			fs.fsyncSync(fd);
+			fs.closeSync(fd);
+		}
+		fs.unlinkSync(targetFile);
+	} catch (err) {
+		console.warn("[Encrypted GIS DB] Could not shred legacy file:", err);
 	}
-});
+};
 
 ipcMain.on("db:log-debug", (_event, logData) => {
 	try {
@@ -1139,7 +1189,786 @@ ipcMain.handle("auth:get-logs", () => {
 	};
 });
 
+// --------- Encrypted SQLite Implementation, Auto-Snapshots & Portable Migration (.bmbackup) ---------
+const getOrCreateDataDek = (db: SQLiteDatabaseSync): Buffer => {
+	if (cachedDataDek) return cachedDataDek;
+
+	const row = db
+		.prepare("SELECT value FROM vault_meta WHERE key = 'dek_envelope'")
+		.get() as { value: string } | undefined;
+
+	const canUseWinDpapi = process.platform === "win32" && safeStorage.isEncryptionAvailable();
+
+	if (row && row.value) {
+		const env = JSON.parse(row.value);
+		if (
+			env.scheme === "dpapi-aes-256-gcm" &&
+			env.wrappedDek &&
+			safeStorage.isEncryptionAvailable()
+		) {
+			const hex = safeStorage.decryptString(Buffer.from(env.wrappedDek, "base64"));
+			cachedDataDek = Buffer.from(hex, "hex");
+			cachedEncryptionScheme = "dpapi-aes-256-gcm";
+			return cachedDataDek;
+		}
+		if (env.scheme === "machine-aes-256-gcm" && env.wrappedDek && env.iv && env.tag) {
+			const wrapKey = getMachineFallbackKey();
+			const decipher = crypto.createDecipheriv(
+				"aes-256-gcm",
+				wrapKey,
+				Buffer.from(env.iv, "base64"),
+			);
+			decipher.setAuthTag(Buffer.from(env.tag, "base64"));
+			cachedDataDek = Buffer.concat([
+				decipher.update(Buffer.from(env.wrappedDek, "base64")),
+				decipher.final(),
+			]);
+			cachedEncryptionScheme = "machine-aes-256-gcm";
+			return cachedDataDek;
+		}
+		throw new Error("Không thể giải mã khóa bảo vệ CSDL (DEK) trên thiết bị này.");
+	}
+
+	// Khởi tạo khóa dữ liệu gốc 256-bit (DEK) lần đầu tiên
+	const newDek = crypto.randomBytes(32);
+	let metaEnvelope: any;
+
+	if (canUseWinDpapi) {
+		const wrapped = safeStorage.encryptString(newDek.toString("hex")).toString("base64");
+		metaEnvelope = {
+			scheme: "dpapi-aes-256-gcm",
+			wrappedDek: wrapped,
+			createdAt: new Date().toISOString(),
+		};
+		cachedEncryptionScheme = "dpapi-aes-256-gcm";
+	} else {
+		const wrapKey = getMachineFallbackKey();
+		const iv = crypto.randomBytes(12);
+		const cipher = crypto.createCipheriv("aes-256-gcm", wrapKey, iv);
+		const enc = Buffer.concat([cipher.update(newDek), cipher.final()]);
+		const tag = cipher.getAuthTag();
+		metaEnvelope = {
+			scheme: "machine-aes-256-gcm",
+			iv: iv.toString("base64"),
+			tag: tag.toString("base64"),
+			wrappedDek: enc.toString("base64"),
+			createdAt: new Date().toISOString(),
+		};
+		cachedEncryptionScheme = "machine-aes-256-gcm";
+	}
+
+	db.prepare("INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('dek_envelope', ?)").run(
+		JSON.stringify(metaEnvelope),
+	);
+	cachedDataDek = newDek;
+	return newDek;
+};
+
+const ensureGisDbOpen = (): SQLiteDatabaseSync => {
+	if (gisSqliteDb) return gisSqliteDb;
+
+	const dbPath = getEncryptedDbPath();
+	const db = new DatabaseSync(dbPath);
+	db.exec(`
+		PRAGMA journal_mode = WAL;
+		PRAGMA synchronous = NORMAL;
+		CREATE TABLE IF NOT EXISTS vault_meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS encrypted_collections (
+			collection_name TEXT PRIMARY KEY,
+			record_count INTEGER NOT NULL,
+			content_sha256 TEXT NOT NULL,
+			iv BLOB NOT NULL,
+			auth_tag BLOB NOT NULL,
+			ciphertext BLOB NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+	`);
+
+	gisSqliteDb = db;
+	getOrCreateDataDek(db);
+
+	// Tự động di trú (migrate) dữ liệu từ file data.json thuần văn bản cũ (nếu còn tồn tại) sang SQLite mã hóa
+	const countRow = db
+		.prepare("SELECT COUNT(*) as cnt FROM encrypted_collections")
+		.get() as { cnt: number };
+	const legacyJsonPath = getLegacyPlainJsonPath();
+
+	if (countRow.cnt === 0 && fs.existsSync(legacyJsonPath)) {
+		try {
+			const rawLegacy = fs.readFileSync(legacyJsonPath, "utf-8");
+			const parsedLegacy = JSON.parse(rawLegacy);
+			if (parsedLegacy && typeof parsedLegacy === "object") {
+				writeEncryptedCollections(parsedLegacy, false);
+				createLocalEncryptedSnapshot(parsedLegacy, "auto_daily");
+				securelyShredFile(legacyJsonPath);
+				console.log(
+					"[Encrypted GIS DB] Migrated legacy data.json into encrypted SQLite vault and shredded plaintext file.",
+				);
+			}
+		} catch (migErr) {
+			console.error("[Encrypted GIS DB] Failed migrating legacy data.json:", migErr);
+		}
+	}
+
+	return db;
+};
+
+const readEncryptedCollections = (): any | null => {
+	const db = ensureGisDbOpen();
+	const dek = getOrCreateDataDek(db);
+
+	const rows = db
+		.prepare(
+			"SELECT collection_name, content_sha256, iv, auth_tag, ciphertext FROM encrypted_collections",
+		)
+		.all() as {
+		collection_name: string;
+		content_sha256: string;
+		iv: Uint8Array;
+		auth_tag: Uint8Array;
+		ciphertext: Uint8Array;
+	}[];
+
+	if (!rows || rows.length === 0) {
+		return null;
+	}
+
+	const result: Record<string, any> = {};
+	for (const row of rows) {
+		const decipher = crypto.createDecipheriv(
+			"aes-256-gcm",
+			dek,
+			Buffer.from(row.iv),
+		);
+		decipher.setAuthTag(Buffer.from(row.auth_tag));
+		const compressed = Buffer.concat([
+			decipher.update(Buffer.from(row.ciphertext)),
+			decipher.final(),
+		]);
+		const jsonBuf = zlib.inflateSync(compressed);
+		result[row.collection_name] = JSON.parse(jsonBuf.toString("utf-8"));
+		inMemoryCollectionHashes.set(row.collection_name, row.content_sha256);
+	}
+
+	for (const key of GIS_COLLECTION_KEYS) {
+		if (!(key in result)) {
+			result[key] = [];
+		}
+	}
+
+	return result;
+};
+
+const createLocalEncryptedSnapshot = (
+	gisData: any,
+	reason: "auto_daily" | "manual" | "pre_restore",
+): { fileName: string; sizeBytes: number } | null => {
+	try {
+		const db = ensureGisDbOpen();
+		const dek = getOrCreateDataDek(db);
+		const summary = computeDataSummary(gisData);
+		const backupsDir = getBackupsDir();
+
+		const iv = crypto.randomBytes(12);
+		const cipher = crypto.createCipheriv("aes-256-gcm", dek, iv);
+		const compressedPayload = zlib.gzipSync(Buffer.from(JSON.stringify(gisData), "utf-8"));
+		const ciphertext = Buffer.concat([cipher.update(compressedPayload), cipher.final()]);
+		const tag = cipher.getAuthTag();
+
+		const stamp = getLocalFileTimestamp();
+		const fileName = `snapshot_${stamp}_${reason}.bmsnap`;
+		const fullPath = path.join(backupsDir, fileName);
+		const tmpPath = `${fullPath}.tmp`;
+
+		const envelope = {
+			version: 1,
+			id: fileName,
+			createdAt: new Date().toISOString(),
+			reason,
+			summary,
+			iv: iv.toString("base64"),
+			tag: tag.toString("base64"),
+			ciphertext: ciphertext.toString("base64"),
+		};
+
+		fs.writeFileSync(tmpPath, JSON.stringify(envelope), "utf-8");
+		fs.renameSync(tmpPath, fullPath);
+
+		// Giữ tối đa MAX_LOCAL_SNAPSHOTS bản sao lưu nội bộ gần nhất
+		const allSnaps = fs
+			.readdirSync(backupsDir)
+			.filter((f) => f.endsWith(".bmsnap"))
+			.map((f) => ({
+				name: f,
+				full: path.join(backupsDir, f),
+				mtime: fs.statSync(path.join(backupsDir, f)).mtimeMs,
+			}))
+			.sort((a, b) => b.mtime - a.mtime);
+
+		for (let i = MAX_LOCAL_SNAPSHOTS; i < allSnaps.length; i++) {
+			try {
+				fs.unlinkSync(allSnaps[i].full);
+			} catch {
+				// Ignore cleanup error
+			}
+		}
+
+		const stat = fs.statSync(fullPath);
+		return { fileName, sizeBytes: stat.size };
+	} catch (err) {
+		console.error("[Encrypted GIS DB] Failed creating local snapshot:", err);
+		return null;
+	}
+};
+
+const writeEncryptedCollections = (newData: any, allowAutoDailyBackup = true): void => {
+	const db = ensureGisDbOpen();
+	const dek = getOrCreateDataDek(db);
+	const nowIso = new Date().toISOString();
+
+	const upsertStmt = db.prepare(`
+		INSERT OR REPLACE INTO encrypted_collections
+		(collection_name, record_count, content_sha256, iv, auth_tag, ciphertext, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`);
+
+	let anyChanged = false;
+	db.exec("BEGIN IMMEDIATE");
+	try {
+		for (const key of GIS_COLLECTION_KEYS) {
+			const arr = Array.isArray(newData?.[key]) ? newData[key] : [];
+			const rawStr = JSON.stringify(arr);
+			const sha = crypto.createHash("sha256").update(rawStr).digest("hex");
+
+			if (inMemoryCollectionHashes.get(key) === sha) {
+				continue;
+			}
+
+			const compressed = zlib.deflateSync(Buffer.from(rawStr, "utf-8"), { level: 6 });
+			const iv = crypto.randomBytes(12);
+			const cipher = crypto.createCipheriv("aes-256-gcm", dek, iv);
+			const ciphertext = Buffer.concat([cipher.update(compressed), cipher.final()]);
+			const authTag = cipher.getAuthTag();
+
+			upsertStmt.run(key, arr.length, sha, iv, authTag, ciphertext, nowIso);
+			inMemoryCollectionHashes.set(key, sha);
+			anyChanged = true;
+		}
+		db.exec("COMMIT");
+	} catch (txErr) {
+		db.exec("ROLLBACK");
+		throw txErr;
+	}
+
+	// Tự động chụp 1 bản sao lưu nội bộ mỗi ngày khi có phát sinh thay đổi dữ liệu
+	if (allowAutoDailyBackup && anyChanged) {
+		const todayStr = getLocalDayStamp();
+		const lastRow = db
+			.prepare("SELECT value FROM vault_meta WHERE key = 'last_auto_backup_date'")
+			.get() as { value: string } | undefined;
+
+		if (!lastRow || lastRow.value !== todayStr) {
+			const summary = computeDataSummary(newData);
+			if (summary.totalRecords > 0) {
+				createLocalEncryptedSnapshot(newData, "auto_daily");
+				db.prepare(
+					"INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('last_auto_backup_date', ?)",
+				).run(todayStr);
+			}
+		}
+	}
+};
+
+// Hợp nhất dữ liệu không trùng lặp khi người dùng chọn chế độ "Gộp dữ liệu (Merge)"
+const mergeGisDatasets = (currentData: any, incomingData: any): any => {
+	const merged: Record<string, any> = {
+		menu: currentData?.menu || incomingData?.menu || [],
+		xaphuong: currentData?.xaphuong || incomingData?.xaphuong || [],
+	};
+
+	const mergeByKey = (curArr: any[], incArr: any[], keyFn: (it: any) => string) => {
+		const out = [...(Array.isArray(curArr) ? curArr : [])];
+		const seen = new Set(out.map(keyFn));
+		for (const item of Array.isArray(incArr) ? incArr : []) {
+			const k = keyFn(item);
+			if (!seen.has(k)) {
+				seen.add(k);
+				out.push(item);
+			}
+		}
+		return out;
+	};
+
+	merged.vuviec = mergeByKey(
+		currentData?.vuviec,
+		incomingData?.vuviec,
+		(x) => `${x.id || ""}|${x.loai || ""}|${x.lng}|${x.lat}`,
+	);
+	merged.camera = mergeByKey(
+		currentData?.camera,
+		incomingData?.camera,
+		(x) => `${x.id || ""}|${x.ten || ""}|${x.lng}|${x.lat}`,
+	);
+	merged.doituong = mergeByKey(
+		currentData?.doituong,
+		incomingData?.doituong,
+		(x) => `${x.cccd || x.id || ""}|${x.hoten || ""}`,
+	);
+	merged.coquan = mergeByKey(
+		currentData?.coquan,
+		incomingData?.coquan,
+		(x) => `${x.ten || ""}|${x.lng}|${x.lat}`,
+	);
+	merged.cskd = mergeByKey(
+		currentData?.cskd,
+		incomingData?.cskd,
+		(x) => `${x.mst || x.ten || ""}|${x.lng}|${x.lat}`,
+	);
+	merged.diemnong = mergeByKey(
+		currentData?.diemnong,
+		incomingData?.diemnong,
+		(x) => `${x.ten || ""}|${x.lng}|${x.lat}`,
+	);
+	merged.tuyenduong = mergeByKey(
+		currentData?.tuyenduong,
+		incomingData?.tuyenduong,
+		(x) => `${x.ten || ""}|${x.type || ""}`,
+	);
+
+	return merged;
+};
+
+ipcMain.handle("db:get-data", () => {
+	try {
+		return readEncryptedCollections();
+	} catch (error) {
+		console.error("[Encrypted GIS DB] Error reading encrypted database:", error);
+		return null;
+	}
+});
+
+ipcMain.handle("db:save-data", (_event, newData) => {
+	try {
+		writeEncryptedCollections(newData, true);
+		return true;
+	} catch (error) {
+		console.error("[Encrypted GIS DB] Error writing encrypted database:", error);
+		throw error;
+	}
+});
+
+ipcMain.handle("backup:get-info", () => {
+	try {
+		ensureGisDbOpen();
+		const dbPath = getEncryptedDbPath();
+		const dbSizeBytes = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
+		const currentData = readEncryptedCollections();
+		const summary = computeDataSummary(currentData);
+
+		const backupsDir = getBackupsDir();
+		const snapshots = fs
+			.readdirSync(backupsDir)
+			.filter((f) => f.endsWith(".bmsnap"))
+			.map((f) => {
+				const full = path.join(backupsDir, f);
+				const stat = fs.statSync(full);
+				try {
+					const raw = JSON.parse(fs.readFileSync(full, "utf-8"));
+					return {
+						id: f,
+						createdAt: raw.createdAt || stat.mtime.toISOString(),
+						reason: raw.reason || "manual",
+						totalRecords: raw.summary?.totalRecords ?? 0,
+						sizeBytes: stat.size,
+					};
+				} catch {
+					return null;
+				}
+			})
+			.filter(Boolean)
+			.sort(
+				(a: any, b: any) =>
+					new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+			);
+
+		return {
+			success: true,
+			engine: "SQLite WAL + Zlib + AES-256-GCM",
+			encryptionScheme: cachedEncryptionScheme,
+			dbPath,
+			dbSizeBytes,
+			summary,
+			snapshots,
+		};
+	} catch (err: any) {
+		return { success: false, error: err.message || "Không thể đọc thông tin lưu trữ." };
+	}
+});
+
+ipcMain.handle("backup:create-local-snapshot", () => {
+	try {
+		const currentData = readEncryptedCollections();
+		if (!currentData) {
+			return { success: false, error: "Chưa có dữ liệu để tạo bản sao lưu nội bộ." };
+		}
+		const snap = createLocalEncryptedSnapshot(currentData, "manual");
+		if (!snap) {
+			return { success: false, error: "Không thể ghi tệp sao lưu nội bộ." };
+		}
+		appendAuditLog(
+			"SYSTEM_ACTION",
+			"success",
+			currentSessionUser || "Quản trị viên",
+			`Tạo bản sao lưu nội bộ mã hóa trên máy (${snap.fileName})`,
+		);
+		return { success: true, fileName: snap.fileName, sizeBytes: snap.sizeBytes };
+	} catch (err: any) {
+		return { success: false, error: err.message || "Lỗi khi tạo bản sao lưu nội bộ." };
+	}
+});
+
+ipcMain.handle("backup:restore-local-snapshot", (_event, payload: { snapshotId: string }) => {
+	try {
+		const db = ensureGisDbOpen();
+		const dek = getOrCreateDataDek(db);
+		const safeName = path.basename(payload?.snapshotId || "");
+		const fullPath = path.join(getBackupsDir(), safeName);
+
+		if (!safeName || !fs.existsSync(fullPath)) {
+			return { success: false, error: "Không tìm thấy tệp sao lưu nội bộ đã chọn." };
+		}
+
+		const env = JSON.parse(fs.readFileSync(fullPath, "utf-8"));
+		const decipher = crypto.createDecipheriv(
+			"aes-256-gcm",
+			dek,
+			Buffer.from(env.iv, "base64"),
+		);
+		decipher.setAuthTag(Buffer.from(env.tag, "base64"));
+		const gzBuf = Buffer.concat([
+			decipher.update(Buffer.from(env.ciphertext, "base64")),
+			decipher.final(),
+		]);
+		const restoredData = JSON.parse(zlib.gunzipSync(gzBuf).toString("utf-8"));
+
+		// Lưu mốc an toàn trước khi khôi phục
+		const currentData = readEncryptedCollections();
+		if (currentData && computeDataSummary(currentData).totalRecords > 0) {
+			createLocalEncryptedSnapshot(currentData, "pre_restore");
+		}
+
+		inMemoryCollectionHashes.clear();
+		writeEncryptedCollections(restoredData, false);
+
+		const sum = computeDataSummary(restoredData);
+		appendAuditLog(
+			"SYSTEM_ACTION",
+			"warning",
+			currentSessionUser || "Quản trị viên",
+			`Khôi phục dữ liệu từ bản sao lưu nội bộ "${safeName}" (${sum.totalRecords} bản ghi)`,
+		);
+
+		return { success: true, data: restoredData, totalRecords: sum.totalRecords };
+	} catch (err: any) {
+		return {
+			success: false,
+			error: "Không thể giải mã hoặc khôi phục bản sao lưu nội bộ: " + (err.message || ""),
+		};
+	}
+});
+
+ipcMain.handle(
+	"backup:export-portable",
+	async (_event, payload: { passphrase: string; includeAuditLogs?: boolean }) => {
+		try {
+			const passphrase = (payload?.passphrase || "").trim();
+			if (passphrase.length < 6) {
+				return {
+					success: false,
+					error: "Mật khẩu bảo vệ gói sao lưu phải có ít nhất 6 ký tự.",
+				};
+			}
+
+			const currentData = readEncryptedCollections();
+			if (!currentData) {
+				return {
+					success: false,
+					error: "Hệ thống hiện chưa có dữ liệu nào để kết xuất.",
+				};
+			}
+
+			const defaultName = `SaoLuu_ANTT_BinhMinh_${getLocalDayStamp()}.bmbackup`;
+			const saveDialog = await dialog.showSaveDialog(win || undefined, {
+				title: "Kết xuất Gói Sao lưu Mã hóa (.bmbackup) để chuyển máy / lưu USB",
+				defaultPath: defaultName,
+				filters: [{ name: "Gói Sao lưu Bảo mật ANTT (.bmbackup)", extensions: ["bmbackup"] }],
+			});
+
+			if (saveDialog.canceled || !saveDialog.filePath) {
+				return { success: false, reason: "cancelled" };
+			}
+
+			const includeLogs = Boolean(payload?.includeAuditLogs);
+			const { vault } = readAuthVault();
+			const summary = computeDataSummary(currentData);
+
+			const innerBundle = {
+				exportedAt: new Date().toISOString(),
+				gisData: currentData,
+				...(includeLogs ? { auditLogs: vault.logs || [] } : {}),
+			};
+
+			const salt = crypto.randomBytes(32);
+			const derivedKey = crypto.scryptSync(passphrase.normalize("NFKC"), salt, 32, {
+				N: 32768,
+				r: 8,
+				p: 1,
+				maxmem: 64 * 1024 * 1024,
+			});
+
+			const iv = crypto.randomBytes(12);
+			const cipher = crypto.createCipheriv("aes-256-gcm", derivedKey, iv);
+			const compressedInner = zlib.gzipSync(
+				Buffer.from(JSON.stringify(innerBundle), "utf-8"),
+				{ level: 9 },
+			);
+			const ciphertext = Buffer.concat([cipher.update(compressedInner), cipher.final()]);
+			const tag = cipher.getAuthTag();
+
+			const portablePackage = {
+				magic: PORTABLE_BACKUP_MAGIC,
+				version: 1,
+				createdAt: new Date().toISOString(),
+				sourceHost: os.hostname(),
+				summary: {
+					...summary,
+					includesAuditLogs: includeLogs,
+				},
+				kdf: {
+					algorithm: "scrypt",
+					salt: salt.toString("base64"),
+					N: 32768,
+					r: 8,
+					p: 1,
+				},
+				cipher: {
+					algorithm: "aes-256-gcm",
+					iv: iv.toString("base64"),
+					tag: tag.toString("base64"),
+					ciphertext: ciphertext.toString("base64"),
+				},
+			};
+
+			const targetPath = saveDialog.filePath;
+			const tmpPath = `${targetPath}.tmp`;
+			fs.writeFileSync(tmpPath, JSON.stringify(portablePackage), "utf-8");
+			fs.renameSync(tmpPath, targetPath);
+
+			const stat = fs.statSync(targetPath);
+			appendAuditLog(
+				"SYSTEM_ACTION",
+				"success",
+				currentSessionUser || "Quản trị viên",
+				`Kết xuất Gói Sao lưu Mã hóa di động "${path.basename(targetPath)}" (${summary.totalRecords} bản ghi)`,
+			);
+
+			return {
+				success: true,
+				filePath: targetPath,
+				fileName: path.basename(targetPath),
+				sizeBytes: stat.size,
+				totalRecords: summary.totalRecords,
+			};
+		} catch (err: any) {
+			console.error("[Portable Backup] Export error:", err);
+			return { success: false, error: err.message || "Lỗi khi đóng gói tệp sao lưu." };
+		}
+	},
+);
+
+ipcMain.handle("backup:inspect-portable", async () => {
+	try {
+		const openRes = await dialog.showOpenDialog(win || undefined, {
+			title: "Chọn Gói Sao lưu Bảo mật (.bmbackup) cần nhập vào máy này",
+			filters: [{ name: "Gói Sao lưu Bảo mật ANTT (.bmbackup)", extensions: ["bmbackup"] }],
+			properties: ["openFile"],
+		});
+
+		if (openRes.canceled || openRes.filePaths.length === 0) {
+			return { success: false, reason: "cancelled" };
+		}
+
+		const filePath = openRes.filePaths[0];
+		const stat = fs.statSync(filePath);
+		const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+
+		if (raw?.magic !== PORTABLE_BACKUP_MAGIC || !raw?.cipher?.ciphertext || !raw?.kdf?.salt) {
+			return {
+				success: false,
+				error: "Tệp được chọn không phải là Gói Sao lưu Bảo mật (.bmbackup) hợp lệ của hệ thống.",
+			};
+		}
+
+		return {
+			success: true,
+			filePath,
+			fileName: path.basename(filePath),
+			sizeBytes: stat.size,
+			createdAt: raw.createdAt,
+			sourceHost: raw.sourceHost || "Máy trạm nội bộ",
+			summary: raw.summary || { totalRecords: 0, counts: {}, includesAuditLogs: false },
+		};
+	} catch (err: any) {
+		return {
+			success: false,
+			error: "Không thể đọc thông tin tệp sao lưu. Tệp có thể bị lỗi định dạng.",
+		};
+	}
+});
+
+ipcMain.handle(
+	"backup:import-portable",
+	(
+		_event,
+		payload: {
+			filePath: string;
+			passphrase: string;
+			mode: "replace" | "merge";
+			restoreAuditLogs?: boolean;
+		},
+	) => {
+		try {
+			const filePath = payload?.filePath || "";
+			const passphrase = (payload?.passphrase || "").trim();
+			const mode = payload?.mode === "merge" ? "merge" : "replace";
+
+			if (!filePath || !fs.existsSync(filePath)) {
+				return { success: false, error: "Không tìm thấy đường dẫn tệp sao lưu." };
+			}
+			if (!passphrase) {
+				return { success: false, error: "Vui lòng nhập mật khẩu giải mã gói sao lưu." };
+			}
+
+			const pkg = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+			if (pkg?.magic !== PORTABLE_BACKUP_MAGIC) {
+				return { success: false, error: "Định dạng tệp sao lưu không hợp lệ." };
+			}
+
+			let decryptedInner: any;
+			try {
+				const salt = Buffer.from(pkg.kdf.salt, "base64");
+				const N = Number(pkg.kdf.N) || 32768;
+				const r = Number(pkg.kdf.r) || 8;
+				const p = Number(pkg.kdf.p) || 1;
+				const derivedKey = crypto.scryptSync(passphrase.normalize("NFKC"), salt, 32, {
+					N,
+					r,
+					p,
+					maxmem: 128 * 1024 * 1024,
+				});
+
+				const decipher = crypto.createDecipheriv(
+					"aes-256-gcm",
+					derivedKey,
+					Buffer.from(pkg.cipher.iv, "base64"),
+				);
+				decipher.setAuthTag(Buffer.from(pkg.cipher.tag, "base64"));
+				const gzBuf = Buffer.concat([
+					decipher.update(Buffer.from(pkg.cipher.ciphertext, "base64")),
+					decipher.final(),
+				]);
+				decryptedInner = JSON.parse(zlib.gunzipSync(gzBuf).toString("utf-8"));
+			} catch {
+				appendAuditLog(
+					"SYSTEM_ACTION",
+					"danger",
+					currentSessionUser || "Quản trị viên",
+					`Giải mã thất bại Gói Sao lưu "${path.basename(filePath)}" (sai mật khẩu bảo vệ hoặc tệp bị sửa đổi)`,
+				);
+				return {
+					success: false,
+					error: "Mật khẩu giải mã không chính xác hoặc tệp sao lưu đã bị can thiệp trái phép!",
+				};
+			}
+
+			if (!decryptedInner?.gisData) {
+				return { success: false, error: "Gói sao lưu không chứa dữ liệu bản đồ hợp lệ." };
+			}
+
+			// Luôn tự động chụp 1 bản sao lưu an toàn của máy hiện tại trước khi ghi đè / gộp
+			const existingData = readEncryptedCollections();
+			if (existingData && computeDataSummary(existingData).totalRecords > 0) {
+				createLocalEncryptedSnapshot(existingData, "pre_restore");
+			}
+
+			const finalData =
+				mode === "merge" && existingData
+					? mergeGisDatasets(existingData, decryptedInner.gisData)
+					: decryptedInner.gisData;
+
+			inMemoryCollectionHashes.clear();
+			writeEncryptedCollections(finalData, false);
+
+			// Khôi phục / hợp nhất nhật ký lịch sử hệ thống nếu được chọn
+			if (payload?.restoreAuditLogs && Array.isArray(decryptedInner.auditLogs)) {
+				const { vault } = readAuthVault();
+				const existingIds = new Set((vault.logs || []).map((l) => l.id));
+				const mergedLogs = [...(vault.logs || [])];
+				for (const log of decryptedInner.auditLogs) {
+					if (log?.id && !existingIds.has(log.id)) {
+						existingIds.add(log.id);
+						mergedLogs.push(log);
+					}
+				}
+				mergedLogs.sort(
+					(a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+				);
+				vault.logs = mergedLogs.slice(0, MAX_AUDIT_LOGS);
+				saveAuthVault(vault);
+			}
+
+			const finalSummary = computeDataSummary(finalData);
+			appendAuditLog(
+				"SYSTEM_ACTION",
+				"success",
+				currentSessionUser || "Quản trị viên",
+				mode === "replace"
+					? `Khôi phục nguyên trạng dữ liệu từ tệp "${path.basename(filePath)}" (${finalSummary.totalRecords} bản ghi)`
+					: `Gộp bổ sung dữ liệu từ tệp "${path.basename(filePath)}" (Tổng sau gộp: ${finalSummary.totalRecords} bản ghi)`,
+			);
+
+			return {
+				success: true,
+				data: finalData,
+				totalRecords: finalSummary.totalRecords,
+			};
+		} catch (err: any) {
+			console.error("[Portable Backup] Import error:", err);
+			return { success: false, error: err.message || "Lỗi khi nhập gói sao lưu." };
+		}
+	},
+);
+
+app.on("before-quit", () => {
+	try {
+		if (gisSqliteDb) {
+			gisSqliteDb.close();
+			gisSqliteDb = null;
+		}
+		if (mbtilesDb) {
+			mbtilesDb.close();
+			mbtilesDb = null;
+		}
+	} catch {
+		// Ignore shutdown close error
+	}
+});
+
 app.whenReady().then(() => {
+	ensureGisDbOpen();
 	setupMbtilesFile();
 	registerMbtilesProtocol();
 	createWindow();

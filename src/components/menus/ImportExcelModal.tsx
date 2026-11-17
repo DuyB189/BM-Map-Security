@@ -12,6 +12,46 @@ interface ImportExcelModalProps {
 	handleImport: (category: string, data: any[]) => void;
 }
 
+const IMPORT_CATEGORIES = [
+	{ value: "vuviec-list", menuId: "menu-vuviec", label: "Vụ việc an ninh trật tự" },
+	{ value: "camera-list", menuId: "menu-camera", label: "Camera giám sát" },
+	{ value: "doituong-list", menuId: "menu-doituong", label: "Đối tượng quản lý" },
+	{ value: "coquan-list", menuId: "menu-coquan", label: "Cơ quan nhà nước" },
+	{ value: "cskd-list", menuId: "menu-cskd", label: "Cơ sở kinh doanh" },
+	{ value: "diemnong-list", menuId: "menu-diemnong", label: "Điểm nóng an ninh" },
+	{ value: "tuyenduong-list", menuId: "menu-tuyenduong", label: "Tuyến đường & Chốt tuần tra" },
+];
+
+/** Phân tích chuỗi tọa độ tuyến: hỗ trợ "lng,lat ; lng,lat" hoặc JSON "[[lng,lat],...]" */
+function parseRouteCoordinateList(raw: any): [number, number][] {
+	if (!raw) return [];
+	const str = String(raw).trim();
+	if (!str) return [];
+
+	if (str.startsWith("[")) {
+		try {
+			const parsed = JSON.parse(str);
+			if (Array.isArray(parsed)) {
+				return parsed
+					.map((pair: any) => [Number(pair?.[0]), Number(pair?.[1])] as [number, number])
+					.filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));
+			}
+		} catch {
+			// Fall through to delimiter parser
+		}
+	}
+
+	return str
+		.split(/[;|\n]+/)
+		.map((part) => part.trim())
+		.filter(Boolean)
+		.map((pairStr) => {
+			const nums = pairStr.split(/[,:\s]+/).map((n) => parseFloat(n.trim()));
+			return [nums[0], nums[1]] as [number, number];
+		})
+		.filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));
+}
+
 export default function ImportExcelModal({
 	showImport,
 	setShowImport,
@@ -24,23 +64,16 @@ export default function ImportExcelModal({
 	const [fileName, setFileName] = useState<string | null>(null);
 	const [pendingData, setPendingData] = useState<any[] | null>(null);
 
-	// Synchronize category with currently active sidebar menu on open
+	// Đồng bộ danh mục đang mở trên Bảng lớn / Sidebar
 	useEffect(() => {
 		if (showImport) {
 			setErrorMessage(null);
 			setFileName(null);
 			setPendingData(null);
-			if (activeMenu === "menu-camera") {
-				setCategory("camera-list");
-			} else if (activeMenu === "menu-doituong") {
-				setCategory("doituong-list");
-			} else if (activeMenu === "menu-cskd") {
-				setCategory("cskd-list");
-			} else if (activeMenu === "menu-diemnong") {
-				setCategory("diemnong-list");
-			} else {
-				setCategory("vuviec-list");
-			}
+			const matched = IMPORT_CATEGORIES.find(
+				(c) => c.menuId === activeMenu || c.value === activeMenu,
+			);
+			setCategory(matched ? matched.value : "vuviec-list");
 		}
 	}, [activeMenu, showImport]);
 
@@ -49,35 +82,39 @@ export default function ImportExcelModal({
 	const getHeaderTitle = () => {
 		if (category === "camera-list") return "Nhập dữ liệu Camera";
 		if (category === "doituong-list") return "Nhập dữ liệu Đối tượng";
+		if (category === "coquan-list") return "Nhập dữ liệu Cơ quan nhà nước";
 		if (category === "cskd-list") return "Nhập dữ liệu Cơ sở kinh doanh";
 		if (category === "diemnong-list") return "Nhập dữ liệu Điểm nóng";
+		if (category === "tuyenduong-list") return "Nhập dữ liệu Tuyến đường";
 		return "Nhập dữ liệu Vụ việc";
 	};
 
 	const getHeaderDesc = () => {
 		if (category === "camera-list") return "Tải lên danh sách camera giám sát";
 		if (category === "doituong-list") return "Tải lên hồ sơ đối tượng theo dõi";
+		if (category === "coquan-list") return "Tải lên danh sách cơ quan hành chính, trường học, y tế";
 		if (category === "cskd-list") return "Tải lên danh sách cơ sở kinh doanh";
 		if (category === "diemnong-list") return "Tải lên danh sách điểm nóng an ninh";
+		if (category === "tuyenduong-list") return "Tải lên danh sách tuyến tuần tra & điểm chốt";
 		return "Tải lên danh sách vụ việc an ninh";
 	};
 
-	// Generate and download pre-defined offline Excel templates
+	// Tạo và tải biểu mẫu Excel chuẩn ngoại tuyến cho đủ 7 danh mục
 	const downloadTemplate = () => {
 		let templateData: any[] = [];
-		let fileName = "";
+		let dlFileName = "";
 		let sheetName = "";
 
 		if (category === "vuviec-list") {
-			fileName = "template_vuviec.xlsx";
+			dlFileName = "template_vuviec.xlsx";
 			sheetName = "VuViec";
 			templateData = [
 				{
 					"Tên vụ việc": "Trộm cắp xe máy",
 					"Kinh độ": 106.105,
 					"Vĩ độ": 11.31,
-					"Địa chỉ": "phường Bình Minh",
-					"Thời gian": "2026-05-29T10:30",
+					"Địa chỉ": "Phường Bình Minh",
+					"Thời gian": "2026-11-17T10:30",
 					"Trạng thái": "Đang xử lý",
 					"Kết quả": "Đang điều tra",
 					"Group ID": "GRP-001",
@@ -87,8 +124,8 @@ export default function ImportExcelModal({
 					"Tên vụ việc": "Cướp giật tài sản",
 					"Kinh độ": 106.13,
 					"Vĩ độ": 11.275,
-					"Địa chỉ": "phường Bình Minh",
-					"Thời gian": "2026-05-28T19:15",
+					"Địa chỉ": "Phường Bình Minh",
+					"Thời gian": "2026-11-16T19:15",
 					"Trạng thái": "Mới",
 					"Kết quả": "",
 					"Group ID": "",
@@ -96,14 +133,14 @@ export default function ImportExcelModal({
 				},
 			];
 		} else if (category === "camera-list") {
-			fileName = "template_camera.xlsx";
+			dlFileName = "template_camera.xlsx";
 			sheetName = "Camera";
 			templateData = [
 				{
 					"Tên camera": "Camera ngã tư Bình Minh",
 					"Kinh độ": 106.118307,
 					"Vĩ độ": 11.338781,
-					"Địa chỉ": "phường Bình Minh",
+					"Địa chỉ": "Phường Bình Minh",
 					"Chủ sở hữu": "Công an Phường Bình Minh",
 					"Số điện thoại": "02763822115",
 					"Mô tả": "Lắp ở cột đèn tín hiệu giao thông, hướng Tây Bắc",
@@ -113,7 +150,7 @@ export default function ImportExcelModal({
 					"Tên camera": "Camera ngõ 12 Đường 30/4",
 					"Kinh độ": 106.11,
 					"Vĩ độ": 11.32,
-					"Địa chỉ": "phường Bình Minh",
+					"Địa chỉ": "Phường Bình Minh",
 					"Chủ sở hữu": "Nguyễn Văn A (Dân cư)",
 					"Số điện thoại": "0987654321",
 					"Mô tả": "Camera gia đình quan sát toàn bộ hẻm",
@@ -121,14 +158,14 @@ export default function ImportExcelModal({
 				},
 			];
 		} else if (category === "doituong-list") {
-			fileName = "template_doituong.xlsx";
+			dlFileName = "template_doituong.xlsx";
 			sheetName = "DoiTuong";
 			templateData = [
 				{
 					"Họ và tên": "Nguyễn Văn A",
 					"Kinh độ": 106.11,
 					"Vĩ độ": 11.29,
-					"Địa chỉ": "phường Bình Minh",
+					"Địa chỉ": "Phường Bình Minh",
 					"Số CCCD": "072096001234",
 					"Loại đối tượng": "Tội phạm ma túy",
 					"Số điện thoại": "0912345678",
@@ -138,15 +175,34 @@ export default function ImportExcelModal({
 					"Họ và tên": "Trần Văn B",
 					"Kinh độ": 106.09,
 					"Vĩ độ": 11.27,
-					"Địa chỉ": "phường Bình Minh",
+					"Địa chỉ": "Phường Bình Minh",
 					"Số CCCD": "072095009876",
 					"Loại đối tượng": "Trộm cắp tài sản",
 					"Số điện thoại": "0988888888",
 					"Mô tả": "Nghi phạm trộm xe chuyên nghiệp khu vực chợ",
 				},
 			];
+		} else if (category === "coquan-list") {
+			dlFileName = "template_coquan.xlsx";
+			sheetName = "CoQuan";
+			templateData = [
+				{
+					"Tên cơ quan": "UBND Phường Bình Minh",
+					"Kinh độ": 106.118307,
+					"Vĩ độ": 11.338781,
+					"Phân loại": "Ủy ban nhân dân",
+					"Địa bàn": "Phường Bình Minh",
+				},
+				{
+					"Tên cơ quan": "Công an Phường Bình Minh",
+					"Kinh độ": 106.11912,
+					"Vĩ độ": 11.33925,
+					"Phân loại": "Công an",
+					"Địa bàn": "Phường Bình Minh",
+				},
+			];
 		} else if (category === "cskd-list") {
-			fileName = "template_cosokinhdoanh.xlsx";
+			dlFileName = "template_cosokinhdoanh.xlsx";
 			sheetName = "CoSoKinhDoanh";
 			templateData = [
 				{
@@ -162,16 +218,16 @@ export default function ImportExcelModal({
 					"Ngày sinh chủ": "01/01/1980",
 					"CCCD chủ": "072090012345",
 					"SĐT chủ": "0912345678",
-					"Địa chỉ chủ": "123 Đường 30/4, Phường 1, Tây Ninh",
+					"Địa chỉ chủ": "Phường Bình Minh, Tây Ninh",
 					"Họ tên quản lý": "Trần Văn B",
 					"Ngày sinh quản lý": "02/02/1985",
 					"CCCD quản lý": "072085009876",
 					"SĐT quản lý": "0987654321",
-					"Địa chỉ quản lý": "456 Cách Mạng Tháng 8, Tây Ninh",
+					"Địa chỉ quản lý": "Phường Bình Minh, Tây Ninh",
 				},
 			];
 		} else if (category === "diemnong-list") {
-			fileName = "template_diemnong.xlsx";
+			dlFileName = "template_diemnong.xlsx";
 			sheetName = "DiemNong";
 			templateData = [
 				{
@@ -197,29 +253,52 @@ export default function ImportExcelModal({
 						"Thường xuyên có nhóm đối tượng tụ tập đánh bài ăn tiền vào buổi tối",
 				},
 			];
+		} else if (category === "tuyenduong-list") {
+			dlFileName = "template_tuyenduong.xlsx";
+			sheetName = "TuyenDuong";
+			templateData = [
+				{
+					"Tên tuyến đường": "Tuyến tuần tra liên khu phố",
+					"Phân loại": "Tuần tra an ninh",
+					"Kiểu hình học": "Tuyến vẽ",
+					"Mức độ cảnh báo": "Cao",
+					"Kinh độ": 106.1125,
+					"Vĩ độ": 11.3342,
+					"Danh sách tọa độ tuyến":
+						"106.112500,11.334200 ; 106.118307,11.338781 ; 106.123400,11.341800",
+				},
+				{
+					"Tên tuyến đường": "Chốt kiểm soát cửa ngõ phía Bắc",
+					"Phân loại": "Chốt kiểm soát",
+					"Kiểu hình học": "Điểm chốt",
+					"Mức độ cảnh báo": "Trung bình",
+					"Kinh độ": 106.118307,
+					"Vĩ độ": 11.34512,
+					"Danh sách tọa độ tuyến": "",
+				},
+			];
 		}
 
 		const ws = XLSX.utils.json_to_sheet(templateData);
 		const wb = XLSX.utils.book_new();
 		XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-		// Auto-fit columns for better template readability
 		const maxCols = Object.keys(templateData[0]).map((key) => ({
-			wch: Math.max(key.length + 5, 20),
+			wch: Math.max(key.length + 6, 22),
 		}));
 		ws["!cols"] = maxCols;
 
-		XLSX.writeFile(wb, fileName);
+		XLSX.writeFile(wb, dlFileName);
 		authService.logAction({
 			eventType: "TEMPLATE_DOWNLOADED",
 			status: "info",
 			category,
-			targetName: fileName,
-			message: `Tải xuống tệp Excel mẫu quy ước "${fileName}" cho danh mục ${getCategoryDisplayName(category)}`,
+			targetName: dlFileName,
+			message: `Tải xuống tệp Excel mẫu quy ước "${dlFileName}" cho danh mục ${getCategoryDisplayName(category)}`,
 		});
 	};
 
-	// Process file upload and parse Excel columns
+	// Đọc file Excel và chuẩn hóa dữ liệu cho cả 7 danh mục
 	const processFile = (file: File) => {
 		setErrorMessage(null);
 		const reader = new FileReader();
@@ -231,7 +310,7 @@ export default function ImportExcelModal({
 				const worksheet = workbook.Sheets[firstSheetName];
 
 				const json = XLSX.utils.sheet_to_json(worksheet) as any[];
-				const dataToImport = [];
+				const dataToImport: any[] = [];
 
 				if (!json || json.length === 0) {
 					setErrorMessage("File Excel không chứa bất kỳ dữ liệu nào.");
@@ -243,14 +322,68 @@ export default function ImportExcelModal({
 
 				for (let i = 0; i < json.length; i++) {
 					const row = json[i];
+					const rowCreatedDate = String(row["Ngày tạo"] || "").trim() || todayLocalStr;
+
+					if (category === "tuyenduong-list") {
+						const routeName = String(row["Tên tuyến đường"] || "").trim();
+						if (!routeName) continue;
+
+						const parsedCoords = parseRouteCoordinateList(
+							row["Danh sách tọa độ tuyến"],
+						);
+						const itemLng = parseFloat(row["Kinh độ"]);
+						const itemLat = parseFloat(row["Vĩ độ"]);
+						const geometryHint = String(row["Kiểu hình học"] || "")
+							.trim()
+							.toLowerCase();
+
+						if (
+							parsedCoords.length >= 2 &&
+							!geometryHint.includes("điểm")
+						) {
+							dataToImport.push({
+								id: Date.now() + i,
+								ten: routeName,
+								loai: String(row["Phân loại"] || "Tuần tra an ninh").trim(),
+								mucdo: String(row["Mức độ cảnh báo"] || "Trung bình").trim(),
+								type: "line",
+								lng: parsedCoords[0][0],
+								lat: parsedCoords[0][1],
+								coordinates: parsedCoords,
+								ngay_tao: rowCreatedDate,
+							});
+						} else if (!isNaN(itemLng) && !isNaN(itemLat)) {
+							dataToImport.push({
+								id: Date.now() + i,
+								ten: routeName,
+								loai: String(row["Phân loại"] || "Chốt tuần tra").trim(),
+								mucdo: String(row["Mức độ cảnh báo"] || "Trung bình").trim(),
+								type: "point",
+								lng: itemLng,
+								lat: itemLat,
+								ngay_tao: rowCreatedDate,
+							});
+						} else if (parsedCoords.length === 1) {
+							dataToImport.push({
+								id: Date.now() + i,
+								ten: routeName,
+								loai: String(row["Phân loại"] || "Chốt tuần tra").trim(),
+								mucdo: String(row["Mức độ cảnh báo"] || "Trung bình").trim(),
+								type: "point",
+								lng: parsedCoords[0][0],
+								lat: parsedCoords[0][1],
+								ngay_tao: rowCreatedDate,
+							});
+						}
+						continue;
+					}
+
 					const itemLng = parseFloat(row["Kinh độ"]);
 					const itemLat = parseFloat(row["Vĩ độ"]);
 
 					if (isNaN(itemLng) || isNaN(itemLat)) {
-						continue; // Skip invalid coordinates
+						continue;
 					}
-
-					const rowCreatedDate = String(row["Ngày tạo"] || "").trim() || todayLocalStr;
 
 					if (category === "vuviec-list") {
 						if (row["Tên vụ việc"]) {
@@ -296,6 +429,17 @@ export default function ImportExcelModal({
 								loai: String(row["Loại đối tượng"] || "").trim(),
 								sdt: String(row["Số điện thoại"] || "").trim(),
 								mota: String(row["Mô tả"] || "").trim(),
+								ngay_tao: rowCreatedDate,
+							});
+						}
+					} else if (category === "coquan-list") {
+						if (row["Tên cơ quan"]) {
+							dataToImport.push({
+								ten: String(row["Tên cơ quan"] || "").trim(),
+								lng: itemLng,
+								lat: itemLat,
+								loai: String(row["Phân loại"] || "Cơ quan hành chính").trim(),
+								xaphuong: String(row["Địa bàn"] || "Phường Bình Minh").trim(),
 								ngay_tao: rowCreatedDate,
 							});
 						}
@@ -355,27 +499,25 @@ export default function ImportExcelModal({
 					setPendingData(dataToImport);
 					setFileName(file.name);
 				} else {
-					if (category === "vuviec-list") {
-						setErrorMessage(
+					const errorHints: Record<string, string> = {
+						"vuviec-list":
 							"Vui lòng kiểm tra lại file. Mẫu Vụ việc yêu cầu các cột: 'Tên vụ việc', 'Kinh độ', 'Vĩ độ'.",
-						);
-					} else if (category === "camera-list") {
-						setErrorMessage(
+						"camera-list":
 							"Vui lòng kiểm tra lại file. Mẫu Camera yêu cầu các cột: 'Tên camera', 'Kinh độ', 'Vĩ độ'.",
-						);
-					} else if (category === "doituong-list") {
-						setErrorMessage(
+						"doituong-list":
 							"Vui lòng kiểm tra lại file. Mẫu Đối tượng yêu cầu các cột: 'Họ và tên', 'Kinh độ', 'Vĩ độ'.",
-						);
-					} else if (category === "cskd-list") {
-						setErrorMessage(
+						"coquan-list":
+							"Vui lòng kiểm tra lại file. Mẫu Cơ quan nhà nước yêu cầu các cột: 'Tên cơ quan', 'Kinh độ', 'Vĩ độ'.",
+						"cskd-list":
 							"Vui lòng kiểm tra lại file. Mẫu Cơ sở kinh doanh yêu cầu các cột: 'Tên cơ sở', 'Kinh độ', 'Vĩ độ'.",
-						);
-					} else if (category === "diemnong-list") {
-						setErrorMessage(
+						"diemnong-list":
 							"Vui lòng kiểm tra lại file. Mẫu Điểm nóng yêu cầu các cột: 'Tên điểm nóng', 'Kinh độ', 'Vĩ độ'.",
-						);
-					}
+						"tuyenduong-list":
+							"Vui lòng kiểm tra lại file. Mẫu Tuyến đường yêu cầu cột 'Tên tuyến đường' kèm ('Kinh độ', 'Vĩ độ') hoặc cột 'Danh sách tọa độ tuyến'.",
+					};
+					setErrorMessage(
+						errorHints[category] || "Không tìm thấy dòng dữ liệu hợp lệ trong tệp Excel.",
+					);
 				}
 			} catch (error) {
 				console.error(error);
@@ -412,94 +554,121 @@ export default function ImportExcelModal({
 
 	return (
 		<AnimatePresence>
-			<div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] flex items-center justify-center p-6">
+			<div className="fixed inset-0 bg-slate-900/45 backdrop-blur-sm z-[2100] flex items-center justify-center p-6">
 				<motion.div
-					initial={{ scale: 0.9, opacity: 0 }}
+					initial={{ scale: 0.94, opacity: 0 }}
 					animate={{ scale: 1, opacity: 1 }}
-					exit={{ scale: 0.9, opacity: 0 }}
-					className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+					exit={{ scale: 0.94, opacity: 0 }}
+					className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col border border-slate-200">
 					{/* Header */}
 					<div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
 						<div>
-							<h2 className="text-base font-bold text-slate-850 uppercase tracking-wide">
+							<h2 className="text-base font-extrabold text-slate-800 uppercase tracking-wide">
 								{getHeaderTitle()}
 							</h2>
-							<p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+							<p className="text-xs text-slate-500 font-medium mt-0.5">
 								{getHeaderDesc()}
 							</p>
 						</div>
 						<button
+							type="button"
 							onClick={() => setShowImport(false)}
-							className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-xl transition-all">
+							className="text-slate-400 hover:text-slate-700 p-2 hover:bg-slate-200/60 rounded-xl transition-all cursor-pointer">
 							<X className="w-5 h-5" />
 						</button>
 					</div>
 
-					<div className="p-6 space-y-5">
-						{/* Error Message alert */}
+					<div className="p-6 space-y-4">
+						{/* Chọn danh mục nhập Excel trực tiếp */}
+						<div className="space-y-1.5">
+							<label className="text-xs font-bold text-slate-600 block">
+								Danh mục cần nhập dữ liệu:
+							</label>
+							<select
+								value={category}
+								onChange={(e) => {
+									setCategory(e.target.value);
+									setPendingData(null);
+									setFileName(null);
+									setErrorMessage(null);
+								}}
+								className="w-full bg-slate-50 border border-slate-200 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-[13px] font-bold text-slate-800 outline-none cursor-pointer">
+								{IMPORT_CATEGORIES.map((c) => (
+									<option key={c.value} value={c.value}>
+										{c.label}
+									</option>
+								))}
+							</select>
+						</div>
+
 						{errorMessage && (
-							<div className="p-3 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-2 text-rose-700 text-xs font-semibold leading-relaxed">
-								<AlertCircle className="w-4.5 h-4.5 text-rose-500 shrink-0 mt-0.5" />
+							<div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-rose-700 text-xs font-semibold leading-relaxed">
+								<AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
 								<span>{errorMessage}</span>
 							</div>
 						)}
 
 						{pendingData ? (
 							<div className="space-y-4">
-								<div className="p-6 bg-emerald-50/50 border border-emerald-100 rounded-3xl flex flex-col items-center text-center gap-3 shadow-inner">
-									<div className="w-14 h-14 bg-white border border-emerald-200 rounded-2xl flex items-center justify-center text-emerald-650 shadow-md shadow-emerald-50 animate-bounce">
-										<Check className="w-7 h-7" />
+								<div className="p-6 bg-emerald-50/60 border border-emerald-200 rounded-2xl flex flex-col items-center text-center gap-3">
+									<div className="w-12 h-12 bg-white border border-emerald-200 rounded-2xl flex items-center justify-center text-emerald-600 shadow-xs">
+										<Check className="w-6 h-6" />
 									</div>
 									<div className="space-y-1">
 										<h4 className="text-sm font-bold text-slate-800">
-											Tệp tin đã sẵn sàng
+											Tệp dữ liệu hợp lệ và sẵn sàng nhập
 										</h4>
-										<p className="text-xs text-slate-500 font-medium font-mono truncate max-w-[300px] bg-white border border-slate-200 px-3 py-1 rounded-lg mt-1 inline-block">
+										<p className="text-xs text-slate-600 font-mono truncate max-w-[340px] bg-white border border-slate-200 px-3 py-1 rounded-lg mt-1 inline-block">
 											{fileName}
 										</p>
 									</div>
-									<p className="text-xs text-slate-650 leading-relaxed font-semibold">
-										Đã kiểm tra hợp lệ:{" "}
-										<span className="text-emerald-600 font-black text-sm">
+									<p className="text-[13px] text-slate-700 font-semibold">
+										Số lượng bản ghi đọc được:{" "}
+										<span className="text-emerald-700 font-extrabold text-base font-mono">
 											{pendingData.length}
 										</span>{" "}
 										bản ghi.
 									</p>
 								</div>
 
-								<div className="grid grid-cols-2 gap-3 pt-2">
+								<div className="grid grid-cols-2 gap-3 pt-1">
 									<button
+										type="button"
 										onClick={() => {
 											setPendingData(null);
 											setFileName(null);
 											setErrorMessage(null);
 										}}
-										className="py-3 px-4 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-850 transition-all text-center cursor-pointer shadow-sm">
+										className="py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 transition-all text-center cursor-pointer">
 										Chọn tệp khác
 									</button>
 									<button
+										type="button"
 										onClick={() => handleImport(category, pendingData)}
-										className="py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all text-center cursor-pointer shadow-md shadow-emerald-100 hover:shadow-lg flex items-center justify-center gap-1.5">
+										className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[13px] font-bold transition-all text-center cursor-pointer shadow-sm flex items-center justify-center gap-1.5">
 										<Check className="w-4 h-4" /> Xác nhận nhập
 									</button>
 								</div>
 							</div>
 						) : (
-							/* Drag & Drop File Container */
 							<div
 								onDragEnter={handleDrag}
 								onDragOver={handleDrag}
 								onDragLeave={handleDrag}
 								onDrop={handleDrop}
-								className={`relative border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all ${dragActive ? "border-sky-500 bg-sky-50/50 scale-[0.99]" : "border-slate-200 bg-slate-50/30 hover:bg-slate-50/80 hover:border-slate-300"}`}>
-								<div className="w-14 h-14 bg-white border border-slate-100 rounded-2xl flex items-center justify-center text-sky-500 shadow-sm shadow-slate-100 mb-3">
-									<UploadCloud className="w-7 h-7" />
+								className={`relative border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center transition-all ${
+									dragActive
+										? "border-sky-500 bg-sky-50/50"
+										: "border-slate-300 bg-slate-50/40 hover:bg-slate-50 hover:border-sky-400"
+								}`}>
+								<div className="w-12 h-12 bg-white border border-slate-200 rounded-2xl flex items-center justify-center text-sky-600 shadow-2xs mb-3">
+									<UploadCloud className="w-6 h-6" />
 								</div>
-								<h4 className="text-sm font-bold text-slate-700">
-									Chọn hoặc Kéo thả file Excel
+								<h4 className="text-[13px] font-bold text-slate-800">
+									Bấm vào đây để chọn file Excel hoặc kéo thả vào khung
 								</h4>
-								<p className="text-[10px] text-slate-400 font-medium mt-1">
-									Hỗ trợ các định dạng tệp: .xlsx hoặc .xls
+								<p className="text-xs text-slate-500 font-medium mt-1">
+									Hỗ trợ định dạng: .xlsx hoặc .xls
 								</p>
 
 								<input
@@ -511,20 +680,21 @@ export default function ImportExcelModal({
 							</div>
 						)}
 
-						{/* Download template panel */}
-						<div className="p-4 bg-slate-50 rounded-2xl border border-slate-100/60 flex items-center justify-between gap-4">
+						{/* Tải file mẫu quy ước */}
+						<div className="p-4 bg-sky-50/60 rounded-2xl border border-sky-100 flex items-center justify-between gap-4">
 							<div className="text-left">
-								<h5 className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">
-									File Mẫu Quy Ước
+								<h5 className="text-xs font-bold text-slate-800">
+									Chưa có biểu mẫu chuẩn?
 								</h5>
-								<p className="text-[9px] text-slate-400 font-semibold uppercase mt-0.5">
-									Tải mẫu Excel tương ứng
+								<p className="text-[11px] text-slate-500 font-medium mt-0.5">
+									Tải file Excel mẫu đúng cột của danh mục đang chọn
 								</p>
 							</div>
 							<button
+								type="button"
 								onClick={downloadTemplate}
-								className="py-2 px-3 bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer">
-								<Download className="w-3.5 h-3.5 text-sky-600" /> Tải Excel Mẫu
+								className="py-2.5 px-3.5 bg-white hover:bg-sky-600 text-sky-700 hover:text-white border border-sky-200 hover:border-sky-600 rounded-xl transition-all text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer shrink-0">
+								<Download className="w-4 h-4" /> Tải Excel Mẫu
 							</button>
 						</div>
 					</div>

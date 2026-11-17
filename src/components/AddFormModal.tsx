@@ -38,7 +38,7 @@ export default function AddFormModal({
     <AnimatePresence>
       {showForm && (
         <div className={isRouteMode 
-          ? "fixed inset-0 z-[1000] pointer-events-none flex items-start justify-start p-6 pt-24 pl-6" 
+          ? "fixed inset-0 z-[1000] pointer-events-none flex items-start justify-start pt-[86px] pl-4 pr-4 pb-4" 
           : "fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] flex items-center justify-center p-6"
         }>
           <motion.div 

@@ -18,56 +18,73 @@ export default function MapControls({
 	onToggleBoundary,
 }: MapControlsProps) {
 	return (
-		<div className="absolute bottom-10 right-6 z-[1000] flex flex-col gap-3">
+		<div className="absolute bottom-4 right-4 z-[950] flex flex-wrap items-center justify-end gap-2 select-none">
+			{/* Cụm điều hướng vùng địa lý có chữ Tiếng Việt rõ ràng */}
 			{(onFitWard || onFitProvince || onToggleBoundary) && (
-				<div className="flex flex-col bg-white rounded-2xl shadow-xl overflow-hidden divide-y divide-slate-100 border border-slate-200/80 font-bold">
+				<div className="flex items-center bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-slate-200/90 p-1 gap-1">
 					{onFitWard && (
 						<button
+							type="button"
 							onClick={onFitWard}
-							title="Về địa giới Phường Bình Minh"
-							className="w-12 h-12 flex items-center justify-center text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer">
-							<LocateFixed className="w-5 h-5" />
+							title="Đưa bản đồ quay về trung tâm Phường Bình Minh"
+							className="h-9 px-3 rounded-xl flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer">
+							<LocateFixed className="w-4 h-4 text-rose-600 shrink-0" />
+							<span>Về Phường Bình Minh</span>
 						</button>
 					)}
+
 					{onFitProvince && (
 						<button
+							type="button"
 							onClick={onFitProvince}
-							title="Xem toàn cảnh Tỉnh Tây Ninh"
-							className="w-12 h-12 flex items-center justify-center text-sky-600 hover:bg-sky-50 transition-colors cursor-pointer">
-							<MapOverviewIcon className="w-5 h-5" />
+							title="Thu nhỏ để xem toàn cảnh địa bàn Tỉnh Tây Ninh"
+							className="h-9 px-3 rounded-xl flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors cursor-pointer">
+							<MapOverviewIcon className="w-4 h-4 text-sky-600 shrink-0" />
+							<span className="hidden sm:inline">Toàn tỉnh Tây Ninh</span>
 						</button>
 					)}
+
 					{onToggleBoundary && (
 						<button
+							type="button"
 							onClick={onToggleBoundary}
 							title={
 								showBoundary
-									? "Ẩn đường địa giới hành chính Phường Bình Minh"
-									: "Hiện đường địa giới hành chính Phường Bình Minh"
+									? "Đang hiển thị đường ranh giới Phường Bình Minh (Bấm để ẩn)"
+									: "Đang ẩn đường ranh giới Phường Bình Minh (Bấm để bật)"
 							}
-							className={`w-12 h-12 flex items-center justify-center transition-colors cursor-pointer ${
+							className={`h-9 px-3 rounded-xl flex items-center gap-1.5 text-xs font-bold border transition-colors cursor-pointer ${
 								showBoundary
-									? "bg-rose-50 text-rose-600 hover:bg-rose-100"
-									: "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+									? "bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100"
+									: "bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700"
 							}`}>
-							<Scan className="w-5 h-5" />
+							<Scan className="w-4 h-4 shrink-0" />
+							<span className="hidden md:inline">
+								Ranh giới: {showBoundary ? "Bật" : "Tắt"}
+							</span>
 						</button>
 					)}
 				</div>
 			)}
 
-			<div className="flex flex-col bg-white rounded-2xl shadow-xl overflow-hidden divide-y divide-slate-100 border border-slate-200/80 font-bold">
+			{/* Cụm Thu nhỏ / Phóng to */}
+			<div className="flex items-center bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg border border-slate-200/90 p-1">
 				<button
-					onClick={zoomIn}
-					title="Phóng to"
-					className="w-12 h-12 flex items-center justify-center text-slate-650 hover:bg-slate-50 cursor-pointer">
-					<Plus className="w-5 h-5" />
-				</button>
-				<button
+					type="button"
 					onClick={zoomOut}
-					title="Thu nhỏ"
-					className="w-12 h-12 flex items-center justify-center text-slate-650 hover:bg-slate-50 cursor-pointer">
-					<Minus className="w-5 h-5" />
+					title="Thu nhỏ bản đồ"
+					className="h-9 px-2.5 rounded-xl flex items-center gap-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer">
+					<Minus className="w-4 h-4" />
+					<span className="hidden xl:inline">Thu nhỏ</span>
+				</button>
+				<div className="h-5 w-px bg-slate-200 mx-0.5" />
+				<button
+					type="button"
+					onClick={zoomIn}
+					title="Phóng to bản đồ"
+					className="h-9 px-2.5 rounded-xl flex items-center gap-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer">
+					<Plus className="w-4 h-4" />
+					<span className="hidden xl:inline">Phóng to</span>
 				</button>
 			</div>
 		</div>
