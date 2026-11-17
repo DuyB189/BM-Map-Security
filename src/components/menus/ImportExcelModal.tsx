@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { X, UploadCloud, Download, Check, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import * as XLSX from "xlsx";
+import { authService, getCategoryDisplayName } from "../../utils/authService";
+import { getLocalDateStr, getLocalDateTimeStr } from "../../utils/dateUtils";
 
 interface ImportExcelModalProps {
 	showImport: boolean;
@@ -208,6 +210,13 @@ export default function ImportExcelModal({
 		ws["!cols"] = maxCols;
 
 		XLSX.writeFile(wb, fileName);
+		authService.logAction({
+			eventType: "TEMPLATE_DOWNLOADED",
+			status: "info",
+			category,
+			targetName: fileName,
+			message: `Tải xuống tệp Excel mẫu quy ước "${fileName}" cho danh mục ${getCategoryDisplayName(category)}`,
+		});
 	};
 
 	// Process file upload and parse Excel columns
@@ -229,6 +238,9 @@ export default function ImportExcelModal({
 					return;
 				}
 
+				const todayLocalStr = getLocalDateStr();
+				const nowLocalDateTime = getLocalDateTimeStr();
+
 				for (let i = 0; i < json.length; i++) {
 					const row = json[i];
 					const itemLng = parseFloat(row["Kinh độ"]);
@@ -238,6 +250,8 @@ export default function ImportExcelModal({
 						continue; // Skip invalid coordinates
 					}
 
+					const rowCreatedDate = String(row["Ngày tạo"] || "").trim() || todayLocalStr;
+
 					if (category === "vuviec-list") {
 						if (row["Tên vụ việc"]) {
 							dataToImport.push({
@@ -246,11 +260,13 @@ export default function ImportExcelModal({
 								lng: itemLng,
 								lat: itemLat,
 								diachi: String(row["Địa chỉ"] || "").trim(),
-								thoigian: String(row["Thời gian"] || "").trim(),
+								thoigian:
+									String(row["Thời gian"] || "").trim() || nowLocalDateTime,
 								trangthai: String(row["Trạng thái"] || "").trim() || "Mới",
 								ketqua: String(row["Kết quả"] || "").trim(),
 								groupId: String(row["Group ID"] || "").trim(),
 								mota: String(row["Mô tả"] || "").trim(),
+								ngay_tao: rowCreatedDate,
 							});
 						}
 					} else if (category === "camera-list") {
@@ -265,6 +281,7 @@ export default function ImportExcelModal({
 								sdt_chu: String(row["Số điện thoại"] || "").trim(),
 								description: String(row["Mô tả"] || "").trim(),
 								trangthai: String(row["Trạng thái"] || "").trim() || "Hoạt động",
+								ngay_tao: rowCreatedDate,
 							});
 						}
 					} else if (category === "doituong-list") {
@@ -279,6 +296,7 @@ export default function ImportExcelModal({
 								loai: String(row["Loại đối tượng"] || "").trim(),
 								sdt: String(row["Số điện thoại"] || "").trim(),
 								mota: String(row["Mô tả"] || "").trim(),
+								ngay_tao: rowCreatedDate,
 							});
 						}
 					} else if (category === "cskd-list") {
@@ -307,6 +325,7 @@ export default function ImportExcelModal({
 								quan_ly_cccd: String(row["CCCD quản lý"] || "").trim(),
 								quan_ly_sdt: String(row["SĐT quản lý"] || "").trim(),
 								quan_ly_diachi: String(row["Địa chỉ quản lý"] || "").trim(),
+								ngay_tao: rowCreatedDate,
 							});
 						}
 					} else if (category === "diemnong-list") {
@@ -326,6 +345,7 @@ export default function ImportExcelModal({
 										? parseInt(row["Bán kính ảnh hưởng (mét)"])
 										: 300,
 								mota: String(row["Mô tả tình hình"] || "").trim(),
+								ngay_tao: rowCreatedDate,
 							});
 						}
 					}

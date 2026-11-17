@@ -23,6 +23,12 @@
       "dist",
       "dist-electron"
     ],
+    "extraResources": [
+      {
+        "from": "phuongbinhminh.mbtiles",
+        "to": "phuongbinhminh.mbtiles"
+      }
+    ],
     "mac": {
       "target": [
         "dmg"

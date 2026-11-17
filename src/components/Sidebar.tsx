@@ -1,393 +1,394 @@
-import React from "react";
-import { Search, Eye, EyeOff, ChevronLeft, Trash2, BarChart3 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import React, { useMemo } from "react";
+import {
+	Search,
+	Eye,
+	EyeOff,
+	Table2,
+	ArrowUpRight,
+	X,
+	LocateFixed,
+	Layers,
+	BarChart3,
+} from "lucide-react";
+import { motion } from "motion/react";
 import { GISData } from "../types";
 import { getIcon } from "../utils/icons";
-import { useState } from "react";
-import { formatDate } from "../utils/date";
+import { authService } from "../utils/authService";
 
 interface SidebarProps {
 	isMenuOpen: boolean;
 	searchQuery: string;
 	setSearchQuery: (val: string) => void;
 	data: GISData;
-	activeMenu: string | null;
-	setActiveMenu: (val: string | null) => void;
 	hiddenLayers: string[];
 	setHiddenLayers: React.Dispatch<React.SetStateAction<string[]>>;
-	visibleCounts: Record<string, number>;
 	getFilteredData: (type: string) => any[];
 	handleItemHover: (id: string | number, category: string, isHovering: boolean) => void;
 	handleItemClick: (item: any) => void;
-	handleDelete: (id: string | number, category: string) => void;
+	onOpenCatalog: (menuId?: string) => void;
 	onOpenStats: () => void;
 }
+
+const LAYER_STYLES: Record<
+	string,
+	{ iconBg: string; iconText: string; badgeBg: string; badgeText: string; shortLabel: string }
+> = {
+	"vuviec-list": {
+		iconBg: "bg-red-50 group-hover:bg-red-600",
+		iconText: "text-red-600 group-hover:text-white",
+		badgeBg: "bg-red-50 border-red-100",
+		badgeText: "text-red-700",
+		shortLabel: "Vụ việc",
+	},
+	"camera-list": {
+		iconBg: "bg-orange-50 group-hover:bg-orange-600",
+		iconText: "text-orange-600 group-hover:text-white",
+		badgeBg: "bg-orange-50 border-orange-100",
+		badgeText: "text-orange-700",
+		shortLabel: "Camera",
+	},
+	"doituong-list": {
+		iconBg: "bg-violet-50 group-hover:bg-violet-600",
+		iconText: "text-violet-600 group-hover:text-white",
+		badgeBg: "bg-violet-50 border-violet-100",
+		badgeText: "text-violet-700",
+		shortLabel: "Đối tượng",
+	},
+	"coquan-list": {
+		iconBg: "bg-slate-100 group-hover:bg-slate-800",
+		iconText: "text-slate-700 group-hover:text-white",
+		badgeBg: "bg-slate-100 border-slate-200",
+		badgeText: "text-slate-700",
+		shortLabel: "Cơ quan",
+	},
+	"cskd-list": {
+		iconBg: "bg-pink-50 group-hover:bg-pink-600",
+		iconText: "text-pink-600 group-hover:text-white",
+		badgeBg: "bg-pink-50 border-pink-100",
+		badgeText: "text-pink-700",
+		shortLabel: "Cơ sở KD",
+	},
+	"diemnong-list": {
+		iconBg: "bg-rose-50 group-hover:bg-rose-600",
+		iconText: "text-rose-600 group-hover:text-white",
+		badgeBg: "bg-rose-50 border-rose-100",
+		badgeText: "text-rose-700",
+		shortLabel: "Điểm nóng",
+	},
+	"tuyenduong-list": {
+		iconBg: "bg-emerald-50 group-hover:bg-emerald-600",
+		iconText: "text-emerald-600 group-hover:text-white",
+		badgeBg: "bg-emerald-50 border-emerald-100",
+		badgeText: "text-emerald-700",
+		shortLabel: "Tuyến đường",
+	},
+};
 
 export default function Sidebar({
 	isMenuOpen,
 	searchQuery,
 	setSearchQuery,
 	data,
-	activeMenu,
-	setActiveMenu,
 	hiddenLayers,
 	setHiddenLayers,
-	visibleCounts,
 	getFilteredData,
 	handleItemHover,
 	handleItemClick,
-	handleDelete,
+	onOpenCatalog,
 	onOpenStats,
 }: SidebarProps) {
-	const [timeFilter, setTimeFilter] = useState("");
-	const [statusFilter, setStatusFilter] = useState("");
+	const totalCount = useMemo(() => {
+		return data.menu.reduce((sum, m) => sum + getFilteredData(m.target).length, 0);
+	}, [data, getFilteredData]);
 
-	const activeMenuObj = data.menu.find((m) => m.id === activeMenu);
-	let activeListData = activeMenuObj ? getFilteredData(activeMenuObj.target) : [];
+	const allTargets = useMemo(() => data.menu.map((m) => m.target), [data.menu]);
+	const allHidden = allTargets.length > 0 && allTargets.every((t) => hiddenLayers.includes(t));
 
-	// UC-INC-03: Tra cứu & Lọc vụ việc
-	if (activeMenu === "menu-vuviec") {
-		if (statusFilter) {
-			activeListData = activeListData.filter((item) => item.trangthai === statusFilter);
+	// Spotlight quick search across all categories (capped at 6 preview items to stay ultra-fast even at 10,000 records)
+	const spotlightResults = useMemo(() => {
+		const q = searchQuery.trim().toLowerCase();
+		if (!q)
+			return {
+				preview: [] as any[],
+				totalMatches: 0,
+				firstMenuId: undefined as string | undefined,
+			};
+
+		const matches: any[] = [];
+		let firstMenuId: string | undefined;
+
+		for (const menu of data.menu) {
+			const items = getFilteredData(menu.target);
+			for (const item of items) {
+				const ok =
+					item.label?.toLowerCase().includes(q) ||
+					(item.loai && String(item.loai).toLowerCase().includes(q)) ||
+					(item.extra && String(item.extra).toLowerCase().includes(q)) ||
+					(item.groupId && String(item.groupId).toLowerCase().includes(q));
+				if (ok) {
+					if (!firstMenuId) firstMenuId = menu.id;
+					matches.push({
+						...item,
+						_menuId: menu.id,
+						_menuTitle: menu.title,
+						_icon: menu.icon,
+					});
+				}
+			}
 		}
-		// Lọc theo thời gian giả định cho UC-INC-03 (tuần/tháng/năm)
-		if (timeFilter === "today") {
-			const today = new Date().toISOString().slice(0, 10);
-			activeListData = activeListData.filter((item) => item.thoigian?.startsWith(today));
-		} else if (timeFilter === "2023") {
-			activeListData = activeListData.filter((item) => item.thoigian?.includes("2023"));
-		}
-	}
 
-	const filteredActiveList = activeListData.filter((item) => {
-		const query = searchQuery.toLowerCase();
-		return (
-			item.label.toLowerCase().includes(query) ||
-			(item.groupId && item.groupId.toLowerCase().includes(query)) ||
-			(item.extra && item.extra.toLowerCase().includes(query))
-		);
-	});
+		return {
+			preview: matches.slice(0, 6),
+			totalMatches: matches.length,
+			firstMenuId,
+		};
+	}, [searchQuery, data, getFilteredData]);
+
+	const handleToggleAllLayers = () => {
+		if (allHidden) {
+			setHiddenLayers([]);
+			authService.logAction({
+				eventType: "SYSTEM_ACTION",
+				status: "info",
+				message: "Bật hiển thị tất cả lớp dữ liệu trên bản đồ",
+			});
+		} else {
+			setHiddenLayers(allTargets);
+			authService.logAction({
+				eventType: "SYSTEM_ACTION",
+				status: "info",
+				message: "Tạm ẩn tất cả lớp dữ liệu trên bản đồ",
+			});
+		}
+	};
 
 	return (
 		<motion.div
 			initial={false}
-			animate={{ x: isMenuOpen ? 0 : -340 }}
-			transition={{ type: "spring", damping: 20, stiffness: 100 }}
-			style={{ height: "calc(100vh - 120px)" }}
-			className="absolute top-24 left-6 w-80 glass-dark border border-slate-200 z-[900] flex flex-col shadow-2xl rounded-3xl overflow-hidden">
-			<div className="p-5 border-b border-slate-100">
+			animate={{ x: isMenuOpen ? 0 : -350 }}
+			transition={{ type: "spring", damping: 22, stiffness: 120 }}
+			style={{ maxHeight: "calc(100vh - 116px)" }}
+			className="absolute top-24 left-6 w-80 glass-dark border border-slate-200/90 z-[900] flex flex-col shadow-2xl rounded-3xl overflow-hidden select-none">
+			{/* QUICK SPOTLIGHT SEARCH */}
+			<div className="p-4 border-b border-slate-100/90 bg-white/60">
 				<div className="relative">
-					<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+					<Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
 					<input
 						type="text"
-						placeholder="Tra cứu nhanh..."
-						className="w-full bg-slate-100 border-none rounded-xl py-3 pl-10 pr-4 text-xs text-slate-800 placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-medium"
+						placeholder="Tra cứu nhanh trên bản đồ..."
+						className="w-full bg-slate-100/90 focus:bg-white border border-transparent focus:border-sky-400 rounded-xl py-2.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-sky-500/15 transition-all font-medium"
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 					/>
+					{searchQuery && (
+						<button
+							type="button"
+							onClick={() => setSearchQuery("")}
+							className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-md text-slate-400 hover:text-slate-700 cursor-pointer">
+							<X className="w-3.5 h-3.5" />
+						</button>
+					)}
 				</div>
 			</div>
 
-			<div className="relative flex-1 overflow-hidden flex flex-col">
-				<AnimatePresence mode="wait">
-					{!activeMenu ? (
-						<motion.div
-							key="menu"
-							initial={{ x: -20, opacity: 0 }}
-							animate={{ x: 0, opacity: 1 }}
-							exit={{ x: -20, opacity: 0 }}
-							transition={{ duration: 0.15 }}
-							className="flex-1 flex flex-col h-full absolute inset-0">
-							<div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-								{data.menu.map((menu) => {
-									const listData = getFilteredData(menu.target).filter((item) => {
-										const query = searchQuery.toLowerCase();
-										return (
-											item.label.toLowerCase().includes(query) ||
-											(item.groupId &&
-												item.groupId.toLowerCase().includes(query)) ||
-											(item.extra && item.extra.toLowerCase().includes(query))
-										);
-									});
+			{/* SPOTLIGHT INSTANT JUMP RESULTS (WHEN SEARCHING) */}
+			{searchQuery.trim() ? (
+				<div className="flex-1 overflow-y-auto p-3.5 space-y-2 custom-scrollbar">
+					<div className="flex items-center justify-between px-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+						<span>Kết quả tìm nhanh</span>
+						<span className="font-mono text-sky-600">
+							{spotlightResults.totalMatches.toLocaleString("vi-VN")} kết quả
+						</span>
+					</div>
 
-									if (searchQuery && listData.length === 0) return null;
-
-									const isHidden = hiddenLayers.includes(menu.target);
-									const count = visibleCounts[menu.id] || 10;
-									const displayedList = listData.slice(0, count);
-
+					{spotlightResults.preview.length > 0 ? (
+						<>
+							<div className="space-y-1.5">
+								{spotlightResults.preview.map((item, idx) => {
+									const st =
+										LAYER_STYLES[item.category] || LAYER_STYLES["coquan-list"];
 									return (
-										<div key={menu.id} className="space-y-1">
-											<div
-												className={`w-full flex items-center justify-between p-1 pr-3 rounded-xl transition-all cursor-pointer text-slate-600 hover:bg-slate-50 border border-transparent`}
-												onClick={() => setActiveMenu(menu.id)}>
-												<div className="flex-1 flex items-center gap-3 p-2">
-													<div className="text-slate-400 group-hover:text-sky-500 transition-colors">
-														{getIcon(menu.icon)}
-													</div>
-													<span className="text-xs uppercase tracking-wide">
-														{menu.title}{" "}
-														<span className="text-[10px] opacity-70">
-															({listData.length})
-														</span>
-													</span>
+										<div
+											key={`${item.id}-${idx}`}
+											onMouseEnter={() =>
+												handleItemHover(
+													item.id || item.label,
+													item.category,
+													true,
+												)
+											}
+											onMouseLeave={() =>
+												handleItemHover(
+													item.id || item.label,
+													item.category,
+													false,
+												)
+											}
+											onClick={() => handleItemClick(item)}
+											className="group flex items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-white/85 hover:bg-white border border-slate-200/70 hover:border-sky-300 shadow-2xs hover:shadow-sm transition-all cursor-pointer">
+											<div className="min-w-0 flex-1">
+												<div className="text-xs font-bold text-slate-800 group-hover:text-sky-700 truncate">
+													{item.label}
 												</div>
-												<div className="flex items-center gap-2">
-													<button
-														onClick={(e) => {
-															e.stopPropagation();
-															setHiddenLayers((prev) =>
-																isHidden
-																	? prev.filter(
-																			(id) =>
-																				id !== menu.target,
-																		)
-																	: [...prev, menu.target],
-															);
-														}}
-														className={`p-1.5 rounded-lg transition-colors ${isHidden ? "text-slate-300 hover:text-slate-500" : "text-sky-500 hover:bg-sky-100"}`}
-														title={
-															isHidden
-																? "Hiển thị lớp này"
-																: "Ẩn lớp này"
-														}>
-														{isHidden ? (
-															<EyeOff className="w-4 h-4" />
-														) : (
-															<Eye className="w-4 h-4" />
-														)}
-													</button>
+												<div className="flex items-center gap-1.5 mt-0.5">
+													<span
+														className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${st.badgeBg} ${st.badgeText}`}>
+														{st.shortLabel}
+													</span>
+													{item.loai && (
+														<span className="text-[10px] text-slate-400 truncate">
+															{item.loai}
+														</span>
+													)}
 												</div>
 											</div>
+											<LocateFixed className="w-3.5 h-3.5 text-slate-300 group-hover:text-sky-600 shrink-0" />
 										</div>
 									);
 								})}
 							</div>
 
-							{/* <div className="border-t border-slate-200/60 p-5 bg-white/40 backdrop-blur-md shrink-0">
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-3">Thống kê nhanh</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <button 
-                    onClick={() => setActiveMenu('menu-vuviec')}
-                    className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-start hover:border-sky-300 hover:shadow-md transition-all group"
-                  >
-                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 group-hover:text-sky-600 transition-colors">Vụ việc mới</span>
-                    <span className="text-xl font-black text-sky-600 leading-none group-hover:scale-110 transition-transform origin-left">{data.vuviec.length}</span>
-                  </button>
-                  <button 
-                    onClick={() => setActiveMenu('menu-diemnong')}
-                    className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-start hover:border-red-300 hover:shadow-md transition-all group"
-                  >
-                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 group-hover:text-red-500 transition-colors">Điểm nóng</span>
-                    <span className="text-xl font-black text-red-500 leading-none group-hover:scale-110 transition-transform origin-left">{data.diemnong.length}</span>
-                  </button>
-                  <button 
-                    onClick={() => setActiveMenu('menu-doituong')}
-                    className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-start hover:border-orange-300 hover:shadow-md transition-all group"
-                  >
-                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 group-hover:text-orange-500 transition-colors">Đối tượng</span>
-                    <span className="text-xl font-black text-orange-500 leading-none group-hover:scale-110 transition-transform origin-left">{data.doituong.length}</span>
-                  </button>
-                  <button 
-                    onClick={() => setActiveMenu('menu-cskd')}
-                    className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-start hover:border-emerald-300 hover:shadow-md transition-all group"
-                  >
-                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 group-hover:text-emerald-600 transition-colors">Cơ sở KD</span>
-                    <span className="text-xl font-black text-emerald-600 leading-none group-hover:scale-110 transition-transform origin-left">{data.cskd.length}</span>
-                  </button>
-                </div>
-
-                <button
-                  onClick={onOpenStats}
-                  className="w-full mt-4 py-3 px-4 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-md shadow-sky-100 hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider"
-                >
-                  <BarChart3 className="w-4 h-4 shrink-0" />
-                  Xem báo cáo chi tiết
-                </button>
-              </div> */}
-						</motion.div>
+							<button
+								type="button"
+								onClick={() => onOpenCatalog(spotlightResults.firstMenuId)}
+								className="w-full mt-2 py-2.5 px-3 rounded-xl bg-sky-50 hover:bg-sky-600 text-sky-700 hover:text-white border border-sky-200 hover:border-sky-600 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer">
+								<Table2 className="w-3.5 h-3.5" />
+								<span>
+									Mở bảng lớn (
+									{spotlightResults.totalMatches.toLocaleString("vi-VN")} kết quả)
+								</span>
+							</button>
+						</>
 					) : (
-						<motion.div
-							key="list"
-							initial={{ x: 20, opacity: 0 }}
-							animate={{ x: 0, opacity: 1 }}
-							exit={{ x: 20, opacity: 0 }}
-							transition={{ duration: 0.15 }}
-							className="flex-1 flex flex-col h-full absolute inset-0">
-							<div className="p-4 border-b border-slate-200/60 flex items-center gap-3 bg-transparent z-10">
-								<button
-									onClick={() => setActiveMenu(null)}
-									className="p-1.5 bg-white/60 text-slate-600 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors shadow-sm">
-									<ChevronLeft className="w-5 h-5" />
-								</button>
-								{activeMenuObj && (
-									<div className="flex-1 overflow-hidden">
-										<h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider truncate">
-											{activeMenuObj.title}
-										</h2>
-										<p className="text-[10px] text-slate-500 font-medium mt-0.5">
-											{filteredActiveList.length} đối tượng
-										</p>
-									</div>
-								)}
-								{activeMenuObj && (
-									<div className="text-sky-600 p-1 bg-sky-50 rounded">
-										{getIcon(activeMenuObj.icon)}
-									</div>
-								)}
-							</div>
+						<div className="py-8 text-center text-xs text-slate-400">
+							Không tìm thấy đối tượng trùng khớp
+						</div>
+					)}
+				</div>
+			) : (
+				/* MODERN COMPACT CATEGORY LAYER DOCK */
+				<div className="flex-1 overflow-y-auto p-3.5 space-y-2.5 custom-scrollbar">
+					<div className="flex items-center justify-between px-1.5 pt-0.5">
+						<div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+							<Layers className="w-3.5 h-3.5 text-sky-600" />
+							<span>Danh mục dữ liệu ({totalCount.toLocaleString("vi-VN")})</span>
+						</div>
+						<button
+							type="button"
+							onClick={handleToggleAllLayers}
+							className="text-[10px] font-bold text-sky-600 hover:text-sky-700 hover:underline cursor-pointer">
+							{allHidden ? "Hiện tất cả" : "Ẩn tất cả"}
+						</button>
+					</div>
 
-							{activeMenu === "menu-vuviec" && (
-								<div className="px-4 py-3 border-b border-slate-100 flex flex-col gap-2 bg-slate-50/50">
-									<div className="flex items-center justify-between">
-										<span className="text-[10px] font-bold text-slate-500 uppercase">
-											Bộ lọc sự kiện
-										</span>
-										<button
-											className="p-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded transition-colors text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-											title="Nhập liệu hàng loạt (UC-INC-05)"
-											onClick={() =>
-												window.dispatchEvent(
-													new CustomEvent("import-incidents"),
-												)
-											}>
-											Nhập Excel
-										</button>
-									</div>
-									<div className="flex gap-2">
-										<select
-											className="flex-1 text-xs bg-white border border-slate-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-sky-500"
-											value={timeFilter}
-											onChange={(e) => setTimeFilter(e.target.value)}>
-											<option value="">Tất cả thời gian</option>
-											<option value="today">Hôm nay</option>
-											<option value="2023">Năm 2023</option>
-										</select>
-										<select
-											className="flex-1 text-xs bg-white border border-slate-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-sky-500"
-											value={statusFilter}
-											onChange={(e) => setStatusFilter(e.target.value)}>
-											<option value="">Mọi trạng thái</option>
-											<option value="Mới">Mới</option>
-											<option value="Đang xử lý">Đang xử lý</option>
-											<option value="Đã giải quyết">Đã giải quyết</option>
-											<option value="Báo động giả">Báo động giả</option>
-										</select>
-									</div>
-								</div>
-							)}
+					<div className="space-y-1.5">
+						{data.menu.map((menu) => {
+							const count = getFilteredData(menu.target).length;
+							const isHidden = hiddenLayers.includes(menu.target);
+							const st = LAYER_STYLES[menu.target] || LAYER_STYLES["coquan-list"];
 
-							{(activeMenu === "menu-camera" ||
-								activeMenu === "menu-doituong" ||
-								activeMenu === "menu-cskd" ||
-								activeMenu === "menu-diemnong") && (
-								<div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-									<span className="text-[10px] font-bold text-slate-500 uppercase">
-										Hành động danh sách
-									</span>
-									<button
-										className="p-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded transition-colors text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-										title="Nhập liệu hàng loạt bằng Excel"
-										onClick={() =>
-											window.dispatchEvent(
-												new CustomEvent("import-incidents"),
-											)
-										}>
-										Nhập Excel
-									</button>
-								</div>
-							)}
-
-							<div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-								{filteredActiveList.map((item, idx) => (
-									<div
-										key={idx}
-										className="group flex items-center justify-between p-3 rounded-xl bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white hover:border-sky-200 shadow-sm hover:shadow-md transition-all cursor-pointer"
-										onMouseEnter={() =>
-											handleItemHover(
-												item.id || item.label,
-												item.category,
-												true,
-											)
-										}
-										onMouseLeave={() =>
-											handleItemHover(
-												item.id || item.label,
-												item.category,
-												false,
-											)
-										}
-										onClick={() => handleItemClick(item)}>
-										<div className="flex items-center gap-3 flex-1 overflow-hidden">
-											<div
-												className={`w-2 h-2 rounded-full shrink-0 ${item.mucdo === "Rất cao" || item.category === "vuviec-list" ? "bg-red-500" : item.mucdo === "Cao" || item.mucdo === "Trung bình" ? "bg-orange-500" : "bg-sky-500"}`}></div>
-											<div className="flex flex-col overflow-hidden">
-												<span className="text-sm text-slate-700 font-bold truncate group-hover:text-sky-700">
-													{item.label}
+							return (
+								<div
+									key={menu.id}
+									onClick={() => onOpenCatalog(menu.id)}
+									className={`group flex items-center justify-between gap-2 p-2.5 rounded-2xl border transition-all cursor-pointer ${
+										isHidden
+											? "bg-slate-50/70 border-slate-200/50 opacity-75 hover:opacity-100"
+											: "bg-white/85 hover:bg-white border-slate-200/70 hover:border-sky-300 shadow-2xs hover:shadow-sm"
+									}`}
+									title={`Mở bảng dữ liệu: ${menu.title}`}>
+									<div className="flex items-center gap-3 min-w-0 flex-1">
+										<div
+											className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${st.iconBg} ${st.iconText}`}>
+											{getIcon(menu.icon)}
+										</div>
+										<div className="min-w-0 flex-1">
+											<div className="flex items-center gap-1.5">
+												<span className="text-xs font-bold text-slate-800 group-hover:text-sky-700 truncate">
+													{menu.title}
 												</span>
-												{(item.loai ||
-													item.extra ||
-													item.trangthai ||
-													item.mucdo ||
-													item.thoigian ||
-													item.groupId) && (
-													<div className="flex items-center gap-1.5 mt-0.5 overflow-hidden flex-wrap">
-														{item.loai && (
-															<span className="text-[9px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 font-bold uppercase truncate">
-																{item.loai}
-															</span>
-														)}
-														{item.mucdo && (
-															<span
-																className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase truncate ${item.mucdo === "Rất cao" ? "bg-red-100 text-red-600" : item.mucdo === "Cao" || item.mucdo === "Trung bình" ? "bg-orange-100 text-orange-600" : "bg-sky-100 text-sky-600"}`}>
-																{item.mucdo}
-															</span>
-														)}
-														{item.trangthai && (
-															<span
-																className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase truncate ${item.trangthai.includes("hoạt động") || item.trangthai === "Đã giải quyết" ? "bg-emerald-100 text-emerald-600" : item.trangthai === "Đang xử lý" ? "bg-amber-100 text-amber-600" : item.trangthai === "Mới" ? "bg-sky-100 text-sky-600" : "bg-rose-100 text-rose-600"}`}>
-																{item.trangthai}
-															</span>
-														)}
-														{item.thoigian && (
-															<span className="text-[9px] text-slate-500 font-medium whitespace-nowrap bg-slate-50 border border-slate-100 px-1 rounded">
-																{formatDate(item.thoigian)}
-															</span>
-														)}
-														{item.groupId && (
-															<span className="text-[9px] px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100 font-bold uppercase truncate">
-																Nhóm: {item.groupId}
-															</span>
-														)}
-														{item.extra && (
-															<span className="text-[9px] text-slate-400 font-medium truncate max-w-[120px]">
-																{item.extra}
-															</span>
-														)}
-													</div>
-												)}
+												<ArrowUpRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-sky-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+											</div>
+											<div className="flex items-center gap-1.5 mt-0.5">
+												<span
+													className={`w-1.5 h-1.5 rounded-full ${
+														isHidden ? "bg-slate-300" : "bg-emerald-500"
+													}`}
+												/>
+												<span className="text-[10px] font-medium text-slate-400">
+													{isHidden
+														? "Đang ẩn trên bản đồ"
+														: "Hiển thị bản đồ"}
+												</span>
 											</div>
 										</div>
+									</div>
+
+									<div className="flex items-center gap-1.5 shrink-0">
+										<span
+											className={`px-2 py-0.5 rounded-lg text-[11px] font-extrabold font-mono border ${st.badgeBg} ${st.badgeText}`}>
+											{count.toLocaleString("vi-VN")}
+										</span>
+
 										<button
+											type="button"
 											onClick={(e) => {
 												e.stopPropagation();
-												handleDelete(item.id || item.label, item.category);
+												authService.logAction({
+													eventType: "SYSTEM_ACTION",
+													status: "info",
+													category: menu.target,
+													targetName: menu.title,
+													message: isHidden
+														? `Bật hiển thị lớp dữ liệu "${menu.title}" trên bản đồ`
+														: `Tạm ẩn lớp dữ liệu "${menu.title}" khỏi bản đồ`,
+												});
+												setHiddenLayers((prev) =>
+													isHidden
+														? prev.filter((id) => id !== menu.target)
+														: [...prev, menu.target],
+												);
 											}}
-											className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all ml-2"
-											title="Xóa đối tượng">
-											<Trash2 className="w-4 h-4" />
+											className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+												isHidden
+													? "text-slate-400 hover:text-slate-700 hover:bg-slate-200/60"
+													: "text-sky-600 hover:bg-sky-50"
+											}`}
+											title={
+												isHidden
+													? "Bật hiển thị lớp này trên bản đồ"
+													: "Tạm ẩn lớp này khỏi bản đồ"
+											}>
+											{isHidden ? (
+												<EyeOff className="w-4 h-4" />
+											) : (
+												<Eye className="w-4 h-4" />
+											)}
 										</button>
 									</div>
-								))}
-								{filteredActiveList.length === 0 && (
-									<div className="text-center p-8 text-slate-400 text-xs">
-										Không tìm thấy dữ liệu phù hợp
-									</div>
-								)}
-							</div>
-						</motion.div>
-					)}
-				</AnimatePresence>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			)}
+
+			{/* BOTTOM PRIMARY CTA: OPEN FULL DATA WORKSPACE */}
+			<div className="p-3.5 border-t border-slate-200/70 bg-white/75 backdrop-blur-md flex items-center gap-2">
+				<button
+					type="button"
+					onClick={() => onOpenCatalog()}
+					className="flex-1 py-2.5 px-3.5 rounded-xl bg-slate-900 hover:bg-sky-600 text-white text-xs font-bold shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer">
+					<Table2 className="w-4 h-4 shrink-0" />
+					<span>Mở Bảng Dữ Liệu</span>
+				</button>
+				<button
+					type="button"
+					onClick={onOpenStats}
+					className="p-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200/80 transition-colors cursor-pointer"
+					title="Báo cáo thống kê ANTT">
+					<BarChart3 className="w-4 h-4" />
+				</button>
 			</div>
 		</motion.div>
 	);

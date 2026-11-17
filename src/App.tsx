@@ -14,12 +14,17 @@ import {
 	X,
 	BarChart3,
 	LogOut,
+	History,
+	KeyRound,
+	ChevronRight,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { GIS_DATA as INITIAL_DATA } from "./constants";
 import { GISData } from "./types";
 import { getSvgPath } from "./utils/icons";
 import { formatDate } from "./utils/date";
+import { getLocalDateStr, getLocalDateTimeStr } from "./utils/dateUtils";
+import { authService, getCategoryDisplayName } from "./utils/authService";
 
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
@@ -35,12 +40,146 @@ import EditCskdModal from "./components/menus/Cskd/EditCskdModal";
 import EditDiemNongModal from "./components/menus/DiemNong/EditDiemNongModal";
 import EditTuyenDuongModal from "./components/menus/TuyenDuong/EditTuyenDuongModal";
 import StatsDashboardModal from "./components/StatsDashboardModal";
+import DataCatalogModal from "./components/DataCatalogModal";
+import SystemHistoryModal from "./components/SystemHistoryModal";
+import OfflineMapModal from "./components/OfflineMapModal";
+import ChangePasswordModal from "./components/ChangePasswordModal";
 import Login from "./components/Login";
+import binhminhBoundaryData from "./data/binhminh.json";
+
+const BINH_MINH_BOUNDS: [[number, number], [number, number]] = [
+	[106.0715255, 11.3239888],
+	[106.1980624, 11.4388937],
+];
+
+const TAY_NINH_BOUNDS: [[number, number], [number, number]] = [
+	[105.78, 10.92],
+	[106.48, 11.80],
+];
+
+const BOUNDARY_LAYER_IDS = [
+	"binhminh-outside-mask",
+	"binhminh-ward-fill",
+	"binhminh-boundary-glow",
+	"binhminh-boundary-casing",
+	"binhminh-boundary-line",
+];
+
+const buildOutsideMaskGeoJson = (boundaryGeoJson: any) => {
+	const wardRing: [number, number][] =
+		boundaryGeoJson?.features?.[0]?.geometry?.coordinates?.[0] || [];
+	const holeRing = [...wardRing].reverse();
+	return {
+		type: "FeatureCollection" as const,
+		features: [
+			{
+				type: "Feature" as const,
+				properties: {},
+				geometry: {
+					type: "Polygon" as const,
+					coordinates: [
+						[
+							[102.0, 7.0],
+							[117.0, 7.0],
+							[117.0, 24.0],
+							[102.0, 24.0],
+							[102.0, 7.0],
+						],
+						...(holeRing.length > 0 ? [holeRing] : []),
+					],
+				},
+			},
+		],
+	};
+};
+
+const FIELD_LABELS: Record<string, string> = {
+	ten: "Tên",
+	ten_xa: "Tên địa bàn",
+	hoten: "Họ tên",
+	loai: "Phân loại",
+	trangthai: "Trạng thái",
+	mucdo: "Mức độ",
+	diachi: "Địa chỉ",
+	mota: "Mô tả",
+	description: "Mô tả",
+	thoigian: "Thời gian",
+	ketqua: "Kết quả xử lý",
+	groupId: "Mã nhóm vụ việc",
+	chu_camera: "Chủ sở hữu",
+	sdt_chu: "SĐT chủ camera",
+	cccd: "Số CCCD",
+	sdt: "Số điện thoại",
+	mst: "Mã số thuế",
+	loai_hinh_kd: "Loại hình KD",
+	giay_phep: "Giấy phép",
+	chu_co_so: "Chủ cơ sở",
+	chu_sdt: "SĐT chủ cơ sở",
+	quan_ly: "Người quản lý",
+	quan_ly_sdt: "SĐT quản lý",
+	radius: "Bán kính (m)",
+	xaphuong: "Địa bàn",
+};
+
+const getEntityTitle = (item: any): string => {
+	if (!item) return "Không xác định";
+	return item.ten || item.hoten || item.loai || item.ten_xa || String(item.id || "Không tên");
+};
+
+const describeEntityChanges = (oldItem: any, newItem: any): string => {
+	if (!oldItem || !newItem) return "Cập nhật thông tin hồ sơ";
+	const changes: string[] = [];
+
+	Object.entries(FIELD_LABELS).forEach(([key, label]) => {
+		const prevVal = oldItem[key] ?? "";
+		const nextVal = newItem[key] ?? "";
+		if (String(prevVal).trim() !== String(nextVal).trim()) {
+			changes.push(label);
+		}
+	});
+
+	if (
+		typeof oldItem.lng === "number" &&
+		typeof newItem.lng === "number" &&
+		(Math.abs(oldItem.lng - newItem.lng) > 1e-6 || Math.abs(oldItem.lat - newItem.lat) > 1e-6)
+	) {
+		changes.push(
+			`Dời tọa độ (${newItem.lng.toFixed(5)}, ${newItem.lat.toFixed(5)})`,
+		);
+	}
+
+	if (
+		JSON.stringify(oldItem.coordinates || []) !== JSON.stringify(newItem.coordinates || [])
+	) {
+		changes.push(`Vẽ lại lộ trình (${newItem.coordinates?.length || 0} điểm)`);
+	}
+
+	if (JSON.stringify(oldItem.suspectIds || []) !== JSON.stringify(newItem.suspectIds || [])) {
+		changes.push(`Liên kết đối tượng nghi vấn (${newItem.suspectIds?.length || 0})`);
+	}
+
+	return changes.length > 0 ? `Thay đổi: ${changes.join(", ")}` : "Lưu cập nhật thông tin";
+};
+
+const BINH_MINH_MASK_GEOJSON = buildOutsideMaskGeoJson(binhminhBoundaryData);
 
 export default function App() {
 	const [isLoggedIn, setIsLoggedIn] = useState(() => {
 		return sessionStorage.getItem("gis_session") === "active";
 	});
+
+	useEffect(() => {
+		authService
+			.getStatus()
+			.then((status) => {
+				if (!status.initialized || status.isLocked) {
+					sessionStorage.removeItem("gis_session");
+					sessionStorage.removeItem("gis_user");
+					setIsLoggedIn(false);
+				}
+			})
+			.catch(() => {});
+	}, []);
 
 	const handleLogin = (username: string) => {
 		setIsLoggedIn(true);
@@ -50,6 +189,8 @@ export default function App() {
 
 	const handleLogout = () => {
 		if (window.confirm("Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?")) {
+			const activeUser = sessionStorage.getItem("gis_user") || undefined;
+			authService.logout(activeUser).catch(() => {});
 			sessionStorage.removeItem("gis_session");
 			sessionStorage.removeItem("gis_user");
 			localStorage.removeItem("gis_session");
@@ -144,6 +285,11 @@ export default function App() {
 		) {
 			saveOfflineData(INITIAL_DATA);
 			setSelectedDetails(null);
+			authService.logAction({
+				eventType: "DB_RESET",
+				status: "danger",
+				message: "Khôi phục cài đặt gốc: Xóa toàn bộ dữ liệu nghiệp vụ GIS về trạng thái trống",
+			});
 			alert("Đã xóa sạch cơ sở dữ liệu và khôi phục cài đặt gốc thành công!");
 		}
 	};
@@ -195,6 +341,7 @@ export default function App() {
 	const [tileVersion, setTileVersion] = useState(1);
 	const [tileServerUrl, setTileServerUrl] = useState<string | null>(null);
 	const [isMapReady, setIsMapReady] = useState(false);
+	const [showBoundary, setShowBoundary] = useState(true);
 
 	const [editIncidentData, setEditIncidentData] = useState<any | null>(null);
 	const [editCameraData, setEditCameraData] = useState<any | null>(null);
@@ -204,6 +351,20 @@ export default function App() {
 	const [editDiemNongData, setEditDiemNongData] = useState<any | null>(null);
 	const [editTuyenDuongData, setEditTuyenDuongData] = useState<any | null>(null);
 	const [showImportModal, setShowImportModal] = useState(false);
+	const [showCatalogModal, setShowCatalogModal] = useState(false);
+
+	useEffect(() => {
+		const onGlobalShortcut = (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+				e.preventDefault();
+				if (isLoggedIn) {
+					setShowCatalogModal((prev) => !prev);
+				}
+			}
+		};
+		window.addEventListener("keydown", onGlobalShortcut);
+		return () => window.removeEventListener("keydown", onGlobalShortcut);
+	}, [isLoggedIn]);
 	const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
 	const [isEditingRouteCoords, setIsEditingRouteCoords] = useState(false);
 	const [pendingEditTuyenDuongData, setPendingEditTuyenDuongData] = useState<any | null>(null);
@@ -547,6 +708,9 @@ export default function App() {
 	};
 
 	const [showSettings, setShowSettings] = useState(false);
+	const [showOfflineMapModal, setShowOfflineMapModal] = useState(false);
+	const [showSystemHistoryModal, setShowSystemHistoryModal] = useState(false);
+	const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 	const [mapStatus, setMapStatus] = useState<{
 		exists: boolean;
 		path: string;
@@ -601,27 +765,181 @@ export default function App() {
 		if (!mapContainer.current || !tileServerUrl) return;
 
 		setIsMapReady(false); // Reset map ready state on initialization
+		setShowBoundary(true);
 
 		map.current = new maplibregl.Map({
 			container: mapContainer.current,
 			style: {
 				version: 8,
 				sources: {
-					osm: {
+					"osm-region": {
 						type: "raster",
 						tiles: [tileServerUrl],
 						tileSize: 256,
+						minzoom: 5,
+						maxzoom: 13,
+					},
+					"osm-province": {
+						type: "raster",
+						tiles: [tileServerUrl],
+						tileSize: 256,
+						minzoom: 14,
+						maxzoom: 16,
+					},
+					"osm-ward-hd": {
+						type: "raster",
+						tiles: [tileServerUrl],
+						tileSize: 256,
+						minzoom: 17,
+						maxzoom: 18,
+					},
+					"binhminh-mask-source": {
+						type: "geojson",
+						data: BINH_MINH_MASK_GEOJSON as any,
+					},
+					"binhminh-boundary-source": {
+						type: "geojson",
+						data: binhminhBoundaryData as any,
 					},
 				},
-				layers: [{ id: "osm", type: "raster", source: "osm" }],
+				layers: [
+					{
+						id: "osm-region",
+						type: "raster",
+						source: "osm-region",
+					},
+					{
+						id: "osm-province",
+						type: "raster",
+						source: "osm-province",
+						minzoom: 14,
+					},
+					{
+						id: "osm-ward-hd",
+						type: "raster",
+						source: "osm-ward-hd",
+						minzoom: 17,
+					},
+					{
+						id: "binhminh-outside-mask",
+						type: "fill",
+						source: "binhminh-mask-source",
+						paint: {
+							"fill-color": "#0f172a",
+							"fill-opacity": [
+								"interpolate",
+								["linear"],
+								["zoom"],
+								9,
+								0.14,
+								13,
+								0.08,
+								16,
+								0.05,
+							],
+						},
+					},
+					{
+						id: "binhminh-ward-fill",
+						type: "fill",
+						source: "binhminh-boundary-source",
+						paint: {
+							"fill-color": "#e11d48",
+							"fill-opacity": [
+								"interpolate",
+								["linear"],
+								["zoom"],
+								8.5,
+								0.12,
+								12,
+								0.04,
+								14.5,
+								0.0,
+							],
+						},
+					},
+					{
+						id: "binhminh-boundary-glow",
+						type: "line",
+						source: "binhminh-boundary-source",
+						layout: {
+							"line-join": "round",
+							"line-cap": "round",
+						},
+						paint: {
+							"line-color": "#f43f5e",
+							"line-width": [
+								"interpolate",
+								["linear"],
+								["zoom"],
+								9,
+								5,
+								13,
+								9,
+								17,
+								14,
+							],
+							"line-opacity": 0.28,
+							"line-blur": 2,
+						},
+					},
+					{
+						id: "binhminh-boundary-casing",
+						type: "line",
+						source: "binhminh-boundary-source",
+						layout: {
+							"line-join": "round",
+							"line-cap": "round",
+						},
+						paint: {
+							"line-color": "#ffffff",
+							"line-width": [
+								"interpolate",
+								["linear"],
+								["zoom"],
+								9,
+								2.5,
+								13,
+								4.2,
+								17,
+								5.5,
+							],
+							"line-opacity": 0.92,
+						},
+					},
+					{
+						id: "binhminh-boundary-line",
+						type: "line",
+						source: "binhminh-boundary-source",
+						layout: {
+							"line-join": "round",
+							"line-cap": "round",
+						},
+						paint: {
+							"line-color": "#e11d48",
+							"line-width": [
+								"interpolate",
+								["linear"],
+								["zoom"],
+								9,
+								1.6,
+								13,
+								2.6,
+								17,
+								3.4,
+							],
+							"line-dasharray": [4, 2],
+						},
+					},
+				],
 			},
-			center: [106.1183077, 11.3387817], // Tọa độ trung tâm Phường Bình Minh
-			zoom: 12.8,
-			minZoom: 11.8,
-			maxZoom: 17,
+			center: [106.136138, 11.3814401], // Tọa độ trung tâm địa giới Phường Bình Minh
+			zoom: 12.2,
+			minZoom: 8.5,
+			maxZoom: 18,
 			maxBounds: [
-				[106.04, 11.27], // Góc Tây Nam (Tây Ninh)
-				[106.24, 11.45], // Góc Đông Bắc (Tây Ninh)
+				[105.45, 10.35], // Góc Tây Nam (Mở rộng toàn tỉnh Tây Ninh & vùng phụ cận)
+				[106.85, 11.88], // Góc Đông Bắc (Toàn tỉnh Tây Ninh)
 			],
 		});
 
@@ -664,6 +982,10 @@ export default function App() {
 			if (isAddingRef.current) {
 				console.log("Map clicked while adding:", e.lngLat);
 				setSelectedCoords([e.lngLat.lng, e.lngLat.lat]);
+				setFormData((prev) => ({
+					...prev,
+					thoigian: prev.thoigian || getLocalDateTimeStr(),
+				}));
 				setShowForm(true);
 				setIsAdding(false);
 			} else if (isEditingRouteCoordsRef.current) {
@@ -1298,8 +1620,8 @@ export default function App() {
 	const handleAdd = () => {
 		if (!selectedCoords) return;
 
-		const nowLocalStr = new Date().toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
-		const currentDateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+		const nowLocalStr = getLocalDateTimeStr(); // YYYY-MM-DDTHH:mm (Local Time)
+		const currentDateStr = getLocalDateStr(); // YYYY-MM-DD (Local Time)
 
 		const baseItem = {
 			lng: selectedCoords[0],
@@ -1424,6 +1746,19 @@ export default function App() {
 		else if (formData.category === "tuyenduong-list") newData.tuyenduong.push(newItem);
 
 		saveOfflineData(newData);
+		const catName = getCategoryDisplayName(formData.category);
+		const itemName = getEntityTitle(newItem);
+		const coordSummary =
+			formData.category === "tuyenduong-list" && newItem.type === "line"
+				? `${newItem.coordinates?.length || 0} điểm tọa độ`
+				: `${newItem.lng.toFixed(5)}, ${newItem.lat.toFixed(5)}`;
+		authService.logAction({
+			eventType: "DATA_CREATED",
+			status: "success",
+			category: formData.category,
+			targetName: itemName,
+			message: `Thêm mới ${catName}: "${itemName}" (${coordSummary})`,
+		});
 		setShowForm(false);
 		setSelectedCoords(null);
 		setRouteCoordinates([]);
@@ -1464,31 +1799,87 @@ export default function App() {
 	const handleDelete = (id: string | number, category: string) => {
 		const newData = { ...data };
 		const targetIdStr = id ? String(id) : "";
+		let deletedItem: any = null;
 
-		if (category === "vuviec-list")
+		if (category === "vuviec-list") {
+			deletedItem = newData.vuviec.find((v) => String(v.id || v.loai) === targetIdStr);
 			newData.vuviec = newData.vuviec.filter((v) => String(v.id || v.loai) !== targetIdStr);
-		else if (category === "xa-list")
+		} else if (category === "xa-list") {
+			deletedItem = newData.xaphuong.find((x) => String(x.ten_xa) === targetIdStr);
 			newData.xaphuong = newData.xaphuong.filter((x) => String(x.ten_xa) !== targetIdStr);
-		else if (category === "camera-list")
+		} else if (category === "camera-list") {
+			deletedItem = newData.camera.find((c) => String(c.id || c.ten) === targetIdStr);
 			newData.camera = newData.camera.filter((c) => String(c.id || c.ten) !== targetIdStr);
-		else if (category === "doituong-list")
+		} else if (category === "doituong-list") {
+			deletedItem = newData.doituong.find((d) => String(d.id || d.hoten) === targetIdStr);
 			newData.doituong = newData.doituong.filter(
 				(d) => String(d.id || d.hoten) !== targetIdStr,
 			);
-		else if (category === "coquan-list")
+		} else if (category === "coquan-list") {
+			deletedItem = newData.coquan.find((c) => String(c.ten) === targetIdStr);
 			newData.coquan = newData.coquan.filter((c) => String(c.ten) !== targetIdStr);
-		else if (category === "cskd-list")
+		} else if (category === "cskd-list") {
+			deletedItem = newData.cskd.find((c) => String(c.ten) === targetIdStr);
 			newData.cskd = newData.cskd.filter((c) => String(c.ten) !== targetIdStr);
-		else if (category === "diemnong-list")
+		} else if (category === "diemnong-list") {
+			deletedItem = newData.diemnong.find((d) => String(d.id || d.ten) === targetIdStr);
 			newData.diemnong = newData.diemnong.filter(
 				(d) => String(d.id || d.ten) !== targetIdStr,
 			);
-		else if (category === "tuyenduong-list")
+		} else if (category === "tuyenduong-list") {
+			deletedItem = newData.tuyenduong.find((t) => String(t.id || t.ten) === targetIdStr);
 			newData.tuyenduong = newData.tuyenduong.filter(
 				(t) => String(t.id || t.ten) !== targetIdStr,
 			);
+		}
 
 		saveOfflineData(newData);
+		const catName = getCategoryDisplayName(category);
+		const delTitle = deletedItem ? getEntityTitle(deletedItem) : targetIdStr;
+		authService.logAction({
+			eventType: "DATA_DELETED",
+			status: "danger",
+			category,
+			targetName: delTitle,
+			message: `Xóa ${catName}: "${delTitle}"`,
+		});
+	};
+
+	const handleBulkDelete = (ids: (string | number)[], category: string) => {
+		if (!ids.length) return;
+		const idSet = new Set(ids.map((x) => String(x)));
+		const newData = { ...data };
+
+		if (category === "vuviec-list") {
+			newData.vuviec = newData.vuviec.filter((v) => !idSet.has(String(v.id || v.loai)));
+		} else if (category === "camera-list") {
+			newData.camera = newData.camera.filter((c) => !idSet.has(String(c.id || c.ten)));
+		} else if (category === "doituong-list") {
+			newData.doituong = newData.doituong.filter(
+				(d) => !idSet.has(String(d.id || d.hoten)),
+			);
+		} else if (category === "coquan-list") {
+			newData.coquan = newData.coquan.filter((c) => !idSet.has(String(c.ten)));
+		} else if (category === "cskd-list") {
+			newData.cskd = newData.cskd.filter((c) => !idSet.has(String(c.ten)));
+		} else if (category === "diemnong-list") {
+			newData.diemnong = newData.diemnong.filter(
+				(d) => !idSet.has(String(d.id || d.ten)),
+			);
+		} else if (category === "tuyenduong-list") {
+			newData.tuyenduong = newData.tuyenduong.filter(
+				(t) => !idSet.has(String(t.id || t.ten)),
+			);
+		}
+
+		saveOfflineData(newData);
+		const catName = getCategoryDisplayName(category);
+		authService.logAction({
+			eventType: "DATA_DELETED",
+			status: "danger",
+			category,
+			message: `Xóa hàng loạt ${ids.length} bản ghi trong danh mục ${catName}`,
+		});
 	};
 
 	const handleAddNewDoiTuongFromVuViec = (newDt: any) => {
@@ -1496,6 +1887,14 @@ export default function App() {
 		newData.doituong.push(newDt);
 		setData(newData);
 		saveOfflineData(newData);
+		const dtName = getEntityTitle(newDt);
+		authService.logAction({
+			eventType: "DATA_CREATED",
+			status: "success",
+			category: "doituong-list",
+			targetName: dtName,
+			message: `Thêm nhanh Đối tượng nghi vấn từ hồ sơ Vụ việc: "${dtName}"`,
+		});
 	};
 
 	const handleViewDetails = (id: string | number, category: string) => {
@@ -1521,6 +1920,14 @@ export default function App() {
 
 		if (foundItem) {
 			setSelectedDetails({ ...foundItem, category });
+			const viewedTitle = getEntityTitle(foundItem);
+			authService.logAction({
+				eventType: "DATA_VIEWED",
+				status: "info",
+				category,
+				targetName: viewedTitle,
+				message: `Xem chi tiết hồ sơ ${getCategoryDisplayName(category)}: "${viewedTitle}"`,
+			});
 
 			const markerObj = markersRef.current.find((m) => {
 				if (m.category !== category) return false;
@@ -1594,8 +2001,17 @@ export default function App() {
 		const updatedIdStr = String(updated.id || updated.loai);
 		const index = newData.vuviec.findIndex((v) => String(v.id || v.loai) === updatedIdStr);
 		if (index > -1) {
+			const prevItem = newData.vuviec[index];
 			newData.vuviec[index] = updated;
 			saveOfflineData(newData);
+			const itemTitle = getEntityTitle(updated);
+			authService.logAction({
+				eventType: "DATA_UPDATED",
+				status: "info",
+				category: "vuviec-list",
+				targetName: itemTitle,
+				message: `Cập nhật Vụ việc "${itemTitle}" — ${describeEntityChanges(prevItem, updated)}`,
+			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.id || selectedDetails.loai) === updatedIdStr &&
@@ -1612,8 +2028,17 @@ export default function App() {
 		const updatedIdStr = String(updated.id || updated.ten);
 		const index = newData.camera.findIndex((c) => String(c.id || c.ten) === updatedIdStr);
 		if (index > -1) {
+			const prevItem = newData.camera[index];
 			newData.camera[index] = updated;
 			saveOfflineData(newData);
+			const itemTitle = getEntityTitle(updated);
+			authService.logAction({
+				eventType: "DATA_UPDATED",
+				status: "info",
+				category: "camera-list",
+				targetName: itemTitle,
+				message: `Cập nhật Camera "${itemTitle}" — ${describeEntityChanges(prevItem, updated)}`,
+			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.id || selectedDetails.ten) === updatedIdStr &&
@@ -1630,8 +2055,17 @@ export default function App() {
 		const updatedIdStr = String(updated.id || updated.hoten);
 		const index = newData.doituong.findIndex((d) => String(d.id || d.hoten) === updatedIdStr);
 		if (index > -1) {
+			const prevItem = newData.doituong[index];
 			newData.doituong[index] = updated;
 			saveOfflineData(newData);
+			const itemTitle = getEntityTitle(updated);
+			authService.logAction({
+				eventType: "DATA_UPDATED",
+				status: "info",
+				category: "doituong-list",
+				targetName: itemTitle,
+				message: `Cập nhật Đối tượng "${itemTitle}" — ${describeEntityChanges(prevItem, updated)}`,
+			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.id || selectedDetails.hoten) === updatedIdStr &&
@@ -1648,10 +2082,19 @@ export default function App() {
 		const originalName = updated._originalTen || updated.ten;
 		const index = newData.coquan.findIndex((c) => String(c.ten) === String(originalName));
 		if (index > -1) {
+			const prevItem = newData.coquan[index];
 			const cleanUpdated = { ...updated };
 			delete cleanUpdated._originalTen;
 			newData.coquan[index] = cleanUpdated;
 			saveOfflineData(newData);
+			const itemTitle = getEntityTitle(cleanUpdated);
+			authService.logAction({
+				eventType: "DATA_UPDATED",
+				status: "info",
+				category: "coquan-list",
+				targetName: itemTitle,
+				message: `Cập nhật Cơ quan nhà nước "${itemTitle}" — ${describeEntityChanges(prevItem, cleanUpdated)}`,
+			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.ten) === String(originalName) &&
@@ -1668,10 +2111,19 @@ export default function App() {
 		const originalName = updated._originalTen || updated.ten;
 		const index = newData.cskd.findIndex((c) => String(c.ten) === String(originalName));
 		if (index > -1) {
+			const prevItem = newData.cskd[index];
 			const cleanUpdated = { ...updated };
 			delete cleanUpdated._originalTen;
 			newData.cskd[index] = cleanUpdated;
 			saveOfflineData(newData);
+			const itemTitle = getEntityTitle(cleanUpdated);
+			authService.logAction({
+				eventType: "DATA_UPDATED",
+				status: "info",
+				category: "cskd-list",
+				targetName: itemTitle,
+				message: `Cập nhật Cơ sở kinh doanh "${itemTitle}" — ${describeEntityChanges(prevItem, cleanUpdated)}`,
+			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.ten) === String(originalName) &&
@@ -1690,6 +2142,7 @@ export default function App() {
 			(d) => String(d.id || d.ten) === String(updated.id || originalName),
 		);
 		if (index > -1) {
+			const prevItem = newData.diemnong[index];
 			const cleanUpdated = { ...updated };
 			delete cleanUpdated._originalTen;
 			cleanUpdated.radius =
@@ -1698,6 +2151,14 @@ export default function App() {
 					: parseInt(cleanUpdated.radius);
 			newData.diemnong[index] = cleanUpdated;
 			saveOfflineData(newData);
+			const itemTitle = getEntityTitle(cleanUpdated);
+			authService.logAction({
+				eventType: "DATA_UPDATED",
+				status: "info",
+				category: "diemnong-list",
+				targetName: itemTitle,
+				message: `Cập nhật Điểm nóng "${itemTitle}" — ${describeEntityChanges(prevItem, cleanUpdated)}`,
+			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.id || selectedDetails.ten) ===
@@ -1717,10 +2178,19 @@ export default function App() {
 			(t) => String(t.id || t.ten) === String(updated.id || originalName),
 		);
 		if (index > -1) {
+			const prevItem = newData.tuyenduong[index];
 			const cleanUpdated = { ...updated };
 			delete cleanUpdated._originalTen;
 			newData.tuyenduong[index] = cleanUpdated;
 			saveOfflineData(newData);
+			const itemTitle = getEntityTitle(cleanUpdated);
+			authService.logAction({
+				eventType: "DATA_UPDATED",
+				status: "info",
+				category: "tuyenduong-list",
+				targetName: itemTitle,
+				message: `Cập nhật Tuyến đường "${itemTitle}" — ${describeEntityChanges(prevItem, cleanUpdated)}`,
+			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.id || selectedDetails.ten) ===
@@ -1757,6 +2227,13 @@ export default function App() {
 			newData.diemnong = [...newData.diemnong, ...importedItems];
 		}
 		saveOfflineData(newData);
+		const catName = getCategoryDisplayName(targetCategory);
+		authService.logAction({
+			eventType: "DATA_IMPORTED",
+			status: "success",
+			category: targetCategory,
+			message: `Nhập dữ liệu hàng loạt từ Excel vào danh mục ${catName}: Thêm mới ${importedItems.length} bản ghi`,
+		});
 		setShowImportModal(false);
 	};
 
@@ -1853,6 +2330,8 @@ export default function App() {
 					lat: c.lat,
 					category: type,
 					id: c.id || c.ten,
+					loai: c.chu_camera,
+					extra: `${c.diachi || ""} ${c.sdt_chu || ""}`,
 				}));
 			case "doituong-list":
 				return data.doituong.map((d) => ({
@@ -1861,6 +2340,8 @@ export default function App() {
 					lat: d.lat,
 					category: type,
 					id: d.id || d.hoten,
+					loai: d.loai,
+					extra: `${d.cccd || ""} ${d.sdt || ""} ${d.diachi || ""}`,
 				}));
 			case "coquan-list":
 				return data.coquan.map((c) => ({
@@ -1962,8 +2443,42 @@ export default function App() {
 	);
 
 	const panToHomeCenter = () => {
-		// Tọa độ trung tâm Phường Bình Minh
-		flyTo(106.1183077, 11.3387817, 15);
+		// Đưa khung nhìn về trọn vẹn địa giới Phường Bình Minh
+		map.current?.fitBounds(BINH_MINH_BOUNDS, {
+			padding: { top: 100, bottom: 50, left: isMenuOpen ? 360 : 60, right: 80 },
+			duration: 1000,
+		});
+	};
+
+	const fitToProvince = () => {
+		// Đưa khung nhìn ra toàn cảnh Tỉnh Tây Ninh
+		map.current?.fitBounds(TAY_NINH_BOUNDS, {
+			padding: { top: 90, bottom: 40, left: isMenuOpen ? 350 : 50, right: 70 },
+			duration: 1200,
+		});
+	};
+
+	const toggleBoundaryVisibility = () => {
+		const nextVisible = !showBoundary;
+		setShowBoundary(nextVisible);
+		authService.logAction({
+			eventType: "SYSTEM_ACTION",
+			status: "info",
+			message: nextVisible
+				? "Bật hiển thị đường địa giới hành chính Phường Bình Minh"
+				: "Ẩn đường địa giới hành chính Phường Bình Minh",
+		});
+		if (map.current) {
+			BOUNDARY_LAYER_IDS.forEach((layerId) => {
+				if (map.current?.getLayer(layerId)) {
+					map.current.setLayoutProperty(
+						layerId,
+						"visibility",
+						nextVisible ? "visible" : "none",
+					);
+				}
+			});
+		}
 	};
 
 	if (!isLoggedIn) {
@@ -1986,6 +2501,7 @@ export default function App() {
 				setIsAdding={setIsAdding}
 				setSelectedCoords={setSelectedCoords}
 				setShowForm={setShowForm}
+				onOpenCatalog={() => setShowCatalogModal(true)}
 			/>
 
 			<Sidebar
@@ -1993,15 +2509,15 @@ export default function App() {
 				searchQuery={searchQuery}
 				setSearchQuery={setSearchQuery}
 				data={data}
-				activeMenu={activeMenu}
-				setActiveMenu={setActiveMenu}
 				hiddenLayers={hiddenLayers}
 				setHiddenLayers={setHiddenLayers}
-				visibleCounts={visibleCounts}
 				getFilteredData={getFilteredData}
 				handleItemHover={handleItemHover}
 				handleItemClick={handleItemClick}
-				handleDelete={handleDelete}
+				onOpenCatalog={(menuId) => {
+					if (menuId) setActiveMenu(menuId);
+					setShowCatalogModal(true);
+				}}
 				onOpenStats={() => setShowStatsModal(true)}
 			/>
 
@@ -2009,7 +2525,7 @@ export default function App() {
 			<button
 				onClick={handleLogout}
 				className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 cursor-pointer group"
-				style={{ right: (window as any).ipcRenderer ? "240px" : "168px" }}
+				style={{ right: "240px" }}
 				title="Đăng xuất khỏi hệ thống">
 				<LogOut className="w-6 h-6" />
 			</button>
@@ -2018,141 +2534,142 @@ export default function App() {
 			<button
 				onClick={() => window.location.reload()}
 				className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 cursor-pointer group"
-				style={{ right: (window as any).ipcRenderer ? "168px" : "96px" }}
+				style={{ right: "168px" }}
 				title="Tải lại dữ liệu & bản đồ">
 				<RefreshCw className="w-6 h-6 group-hover:rotate-45 transition-transform" />
 			</button>
 
 			{/* Statistics & Reports Button */}
 			<button
-				onClick={() => setShowStatsModal(true)}
+				onClick={() => {
+					setShowStatsModal(true);
+					authService.logAction({
+						eventType: "SYSTEM_ACTION",
+						status: "info",
+						message: "Mở bảng điều khiển Báo cáo Thống kê ANTT",
+					});
+				}}
 				className="absolute top-4 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all text-slate-600 hover:text-sky-600 hover:bg-sky-50 hover:border-sky-200 cursor-pointer"
-				style={{ right: (window as any).ipcRenderer ? "96px" : "24px" }}
+				style={{ right: "96px" }}
 				title="Báo cáo thống kê">
 				<BarChart3 className="w-6 h-6" />
 			</button>
 
-			{/* Settings / Offline Map Button & Dropdown */}
-			{/* @ts-ignore */}
-			{window.ipcRenderer && (
-				<>
-					<button
-						onClick={() => setShowSettings(!showSettings)}
-						className={`absolute top-4 right-6 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all ${showSettings ? "bg-sky-50 text-sky-600 border-sky-200" : "text-slate-600 hover:bg-white"}`}
-						title="Thiết lập bản đồ">
-						<Settings className={`w-6 h-6 ${isUpdatingMap ? "animate-spin" : ""}`} />
-					</button>
+			{/* Settings Menu Button & Action Rows Dropdown */}
+			<button
+				onClick={() => setShowSettings(!showSettings)}
+				className={`absolute top-4 right-6 h-16 w-16 glass rounded-2xl z-[1000] flex items-center justify-center shadow-xl border border-white/40 transition-all cursor-pointer ${showSettings ? "bg-sky-50 text-sky-600 border-sky-200" : "text-slate-600 hover:bg-white"}`}
+				title="Thiết lập hệ thống">
+				<Settings className={`w-6 h-6 ${isUpdatingMap ? "animate-spin" : ""}`} />
+			</button>
 
-					<AnimatePresence>
-						{showSettings && (
-							<motion.div
-								initial={{ opacity: 0, y: 10, scale: 0.95 }}
-								animate={{ opacity: 1, y: 0, scale: 1 }}
-								exit={{ opacity: 0, y: 10, scale: 0.95 }}
-								className="absolute top-24 right-6 w-80 glass p-5 rounded-3xl z-[1000] shadow-2xl border border-white/40 space-y-4">
-								<div className="flex items-center gap-2.5">
-									<div className="p-2 bg-sky-500 text-white rounded-xl shadow-md shadow-sky-200">
-										<Database className="w-4 h-4" />
+			<AnimatePresence>
+				{showSettings && (
+					<motion.div
+						initial={{ opacity: 0, y: 10, scale: 0.95 }}
+						animate={{ opacity: 1, y: 0, scale: 1 }}
+						exit={{ opacity: 0, y: 10, scale: 0.95 }}
+						transition={{ duration: 0.16 }}
+						className="absolute top-24 right-6 w-80 glass-dark p-3 rounded-3xl z-[1000] shadow-2xl border border-slate-200/80 space-y-1.5">
+						<div className="px-3 py-2 border-b border-slate-100">
+							<h4 className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider">
+								Thiết lập & Quản trị Hệ thống
+							</h4>
+							<p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+								Tài khoản: {sessionStorage.getItem("gis_user") || "Quản trị viên"}
+							</p>
+						</div>
+
+						<button
+							type="button"
+							onClick={() => {
+								setShowSettings(false);
+								setShowOfflineMapModal(true);
+							}}
+							className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-sky-50/80 text-left transition-colors group cursor-pointer">
+							<div className="flex items-center gap-3 min-w-0">
+								<div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center shrink-0 group-hover:bg-sky-600 group-hover:text-white transition-colors">
+									<Database className="w-4 h-4" />
+								</div>
+								<div className="min-w-0">
+									<div className="text-xs font-bold text-slate-800 group-hover:text-sky-700 truncate">
+										Cập nhật bản đồ nền (.mbtiles)
 									</div>
-									<div className="text-left">
-										<h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-											Bản đồ ngoại tuyến
-										</h4>
-										<p className="text-[10px] text-slate-500 font-medium">
-											Chạy offline 100% tự đóng gói
-										</p>
+									<div className="text-[10px] font-medium text-slate-500 truncate">
+										Trạng thái & nạp tệp bản đồ ngoại tuyến
 									</div>
 								</div>
+							</div>
+							<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-sky-600 shrink-0" />
+						</button>
 
-								{mapStatus && (
-									<div className="bg-white/80 rounded-2xl p-3 text-xs text-slate-600 border border-slate-100 space-y-1.5 text-left shadow-inner">
-										<div className="flex justify-between items-center">
-											<span className="font-semibold text-slate-400">
-												Trạng thái:
-											</span>
-											<span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-[10px]">
-												Đã kết nối
-											</span>
-										</div>
-										<div className="flex justify-between items-center border-t border-slate-50 pt-1.5">
-											<span className="font-semibold text-slate-400">
-												Dung lượng:
-											</span>
-											<span className="font-bold text-slate-700">
-												{(mapStatus.sizeBytes / (1024 * 1024)).toFixed(1)}{" "}
-												MB
-											</span>
-										</div>
-										<div className="flex justify-between items-center border-t border-slate-50 pt-1.5">
-											<span className="font-semibold text-slate-400">
-												Cập nhật:
-											</span>
-											<span className="font-bold text-slate-700 truncate max-w-[150px]">
-												{mapStatus.modifiedTime
-													? new Date(
-															mapStatus.modifiedTime,
-														).toLocaleDateString("vi-VN")
-													: "Mặc định"}
-											</span>
-										</div>
+						<button
+							type="button"
+							onClick={() => {
+								setShowSettings(false);
+								setShowSystemHistoryModal(true);
+							}}
+							className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-amber-50/80 text-left transition-colors group cursor-pointer">
+							<div className="flex items-center gap-3 min-w-0">
+								<div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 group-hover:bg-amber-600 group-hover:text-white transition-colors">
+									<History className="w-4 h-4" />
+								</div>
+								<div className="min-w-0">
+									<div className="text-xs font-bold text-slate-800 group-hover:text-amber-700 truncate">
+										Lịch sử hệ thống
 									</div>
-								)}
+									<div className="text-[10px] font-medium text-slate-500 truncate">
+										Nhật ký đăng nhập, sai mật khẩu & khóa máy
+									</div>
+								</div>
+							</div>
+							<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 shrink-0" />
+						</button>
 
-								<button
-									onClick={triggerUpdateMap}
-									disabled={isUpdatingMap}
-									className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-sm ${
-										isUpdatingMap
-											? "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-											: "bg-sky-600 border border-sky-600 hover:bg-sky-700 hover:border-sky-700 text-white hover:shadow-md cursor-pointer"
-									}`}>
-									<RefreshCw
-										className={`w-3.5 h-3.5 ${isUpdatingMap ? "animate-spin" : ""}`}
-									/>
-									<span>
-										{isUpdatingMap
-											? "Đang cập nhật..."
-											: "Cập nhật bản đồ nền (.mbtiles)"}
-									</span>
-								</button>
+						<button
+							type="button"
+							onClick={() => {
+								setShowSettings(false);
+								setShowChangePasswordModal(true);
+							}}
+							className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-indigo-50/80 text-left transition-colors group cursor-pointer">
+							<div className="flex items-center gap-3 min-w-0">
+								<div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+									<KeyRound className="w-4 h-4" />
+								</div>
+								<div className="min-w-0">
+									<div className="text-xs font-bold text-slate-800 group-hover:text-indigo-700 truncate">
+										Bảo mật & Đổi mật khẩu
+									</div>
+									<div className="text-[10px] font-medium text-slate-500 truncate">
+										Đổi mật khẩu & cấp mới Mã Chủ Quản
+									</div>
+								</div>
+							</div>
+							<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 shrink-0" />
+						</button>
+					</motion.div>
+				)}
+			</AnimatePresence>
 
-								<AnimatePresence>
-									{updateMessage && (
-										<motion.div
-											initial={{ opacity: 0, y: -5 }}
-											animate={{ opacity: 1, y: 0 }}
-											exit={{ opacity: 0, y: -5 }}
-											className={`flex items-center gap-1.5 p-2.5 rounded-xl text-[10px] font-bold uppercase tracking-wider ${
-												updateMessage.isError
-													? "bg-rose-50 text-rose-700 border border-rose-100"
-													: "bg-emerald-50 text-emerald-700 border border-emerald-100"
-											}`}>
-											{updateMessage.isError ? (
-												<AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-											) : (
-												<CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-											)}
-											<span className="text-left leading-snug">
-												{updateMessage.text}
-											</span>
-										</motion.div>
-									)}
-								</AnimatePresence>
+			<OfflineMapModal
+				show={showOfflineMapModal}
+				onClose={() => setShowOfflineMapModal(false)}
+				mapStatus={mapStatus}
+				isUpdatingMap={isUpdatingMap}
+				updateMessage={updateMessage}
+				onTriggerUpdateMap={triggerUpdateMap}
+			/>
 
-								{/* <div className="border-t border-slate-100 pt-3">
-                  <button
-                    onClick={handleResetDatabase}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-sm bg-rose-50 border border-rose-200 hover:bg-rose-100/70 text-rose-600 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                    <span>Khôi phục Cài đặt gốc</span>
-                  </button>
-                </div> */}
-							</motion.div>
-						)}
-					</AnimatePresence>
-				</>
-			)}
+			<SystemHistoryModal
+				show={showSystemHistoryModal}
+				onClose={() => setShowSystemHistoryModal(false)}
+			/>
+
+			<ChangePasswordModal
+				show={showChangePasswordModal}
+				onClose={() => setShowChangePasswordModal(false)}
+			/>
 
 			<AddFormModal
 				showForm={showForm}
@@ -2176,13 +2693,65 @@ export default function App() {
 				doituongList={data.doituong}
 			/>
 
+			<DataCatalogModal
+				show={showCatalogModal}
+				initialMenuId={activeMenu}
+				onClose={() => setShowCatalogModal(false)}
+				data={data}
+				hiddenLayers={hiddenLayers}
+				setHiddenLayers={setHiddenLayers}
+				suspendOverlay={Boolean(
+					pickingLocationFor ||
+						isEditingRouteCoords ||
+						(showForm && formData.category === "tuyenduong-list"),
+				)}
+				onLocateOnMap={(item, category) => {
+					setShowCatalogModal(false);
+					let lookupId = "";
+					if (category === "vuviec-list") lookupId = item.id || item.loai;
+					else if (category === "camera-list") lookupId = item.id || item.ten;
+					else if (category === "doituong-list") lookupId = item.id || item.hoten;
+					else if (category === "coquan-list") lookupId = item.ten;
+					else if (category === "cskd-list") lookupId = item.ten;
+					else if (category === "diemnong-list") lookupId = item.id || item.ten;
+					else if (category === "tuyenduong-list") lookupId = item.id || item.ten;
+
+					const wasHidden = hiddenLayers.includes(category);
+					if (wasHidden) {
+						setHiddenLayers((prev) => prev.filter((l) => l !== category));
+					}
+					setTimeout(
+						() => {
+							handleViewDetails(lookupId, category);
+						},
+						wasHidden ? 350 : 80,
+					);
+				}}
+				onOpenAddForCategory={(category) => {
+					setSelectedCoords([106.1183077, 11.3387817]);
+					setRouteCoordinates([]);
+					setFormData((prev) => ({
+						...prev,
+						category,
+						thoigian: getLocalDateTimeStr(),
+					}));
+					setShowForm(true);
+				}}
+				onOpenImportForMenu={(menuId) => {
+					setActiveMenu(menuId);
+					setShowImportModal(true);
+				}}
+				onDeleteSingle={handleDelete}
+				onBulkDelete={handleBulkDelete}
+			/>
+
 			<StatsDashboardModal
 				show={showStatsModal}
 				onClose={() => setShowStatsModal(false)}
 				data={data}
 				onSelectCategory={(category) => {
 					setActiveMenu(category);
-					setIsMenuOpen(true);
+					setShowCatalogModal(true);
 					setShowStatsModal(false);
 				}}
 				onSelectItem={(item) => {
@@ -2285,6 +2854,10 @@ export default function App() {
 			<MapControls
 				zoomIn={() => map.current?.zoomIn()}
 				zoomOut={() => map.current?.zoomOut()}
+				onFitWard={panToHomeCenter}
+				onFitProvince={fitToProvince}
+				showBoundary={showBoundary}
+				onToggleBoundary={toggleBoundaryVisibility}
 			/>
 
 			<AnimatePresence>

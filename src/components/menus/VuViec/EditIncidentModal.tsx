@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Check, Search, Plus, UserPlus, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getLocalDateStr } from '../../../utils/dateUtils';
 
 interface EditIncidentModalProps {
   editData: any | null;
@@ -79,7 +80,7 @@ export default function EditIncidentModal({
       mota: newMota.trim(),
       lng: finalCoords[0],
       lat: finalCoords[1],
-      ngay_tao: new Date().toISOString().split('T')[0]
+      ngay_tao: getLocalDateStr()
     };
 
     // Add to global state

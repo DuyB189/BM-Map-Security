@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   X, Calendar, MapPin, BarChart3, PieChart, TrendingUp,
   AlertTriangle, User, Flame, Store, Cctv, Building2, Route,
-  TrendingDown, Info, ArrowUpRight, ArrowDownRight, Search, ChevronRight
+  TrendingDown, ArrowUpRight, ArrowDownRight, Search, ChevronRight,
+  Clock, RotateCcw
 } from 'lucide-react';
 import { GISData } from '../types';
+import { parseFlexibleLocalDate, formatVnDateTime } from '../utils/dateUtils';
 
 interface StatsDashboardModalProps {
   show: boolean;
@@ -30,12 +32,45 @@ interface HoveredTrendPoint {
   y: number;
 }
 
-export default function StatsDashboardModal({ show, onClose, data, onSelectCategory, onSelectItem }: StatsDashboardModalProps) {
+export default function StatsDashboardModal({ show, onClose, data, onSelectItem }: StatsDashboardModalProps) {
+  const [systemNow, setSystemNow] = useState<Date>(() => new Date());
   const [periodType, setPeriodType] = useState<'month' | 'quarter' | 'year'>('month');
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
-  const [selectedMonth, setSelectedMonth] = useState<number>(6); // Default: June
-  const [selectedQuarter, setSelectedQuarter] = useState<number>(2); // Default: Q2
+  const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => new Date().getMonth() + 1);
+  const [selectedQuarter, setSelectedQuarter] = useState<number>(() => Math.floor(new Date().getMonth() / 3) + 1);
   const [trendEntity, setTrendEntity] = useState<'vuviec' | 'doituong' | 'diemnong' | 'cskd'>('vuviec');
+
+  // Đồng bộ thời gian hệ thống thực tế mỗi khi mở bảng Báo cáo thống kê
+  useEffect(() => {
+    if (!show) return;
+    const now = new Date();
+    setSystemNow(now);
+    setSelectedYear(now.getFullYear());
+    setSelectedMonth(now.getMonth() + 1);
+    setSelectedQuarter(Math.floor(now.getMonth() / 3) + 1);
+
+    const timer = window.setInterval(() => {
+      setSystemNow(new Date());
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [show]);
+
+  const resetToCurrentPeriod = () => {
+    const now = new Date();
+    setSystemNow(now);
+    setSelectedYear(now.getFullYear());
+    setSelectedMonth(now.getMonth() + 1);
+    setSelectedQuarter(Math.floor(now.getMonth() / 3) + 1);
+  };
+
+  const isViewingCurrentPeriod = useMemo(() => {
+    const curY = systemNow.getFullYear();
+    const curM = systemNow.getMonth() + 1;
+    const curQ = Math.floor(systemNow.getMonth() / 3) + 1;
+    if (periodType === 'month') return selectedYear === curY && selectedMonth === curM;
+    if (periodType === 'quarter') return selectedYear === curY && selectedQuarter === curQ;
+    return selectedYear === curY;
+  }, [periodType, selectedYear, selectedMonth, selectedQuarter, systemNow]);
 
   const [hoveredBar, setHoveredBar] = useState<HoveredBar | null>(null);
   const [hoveredTrendPoint, setHoveredTrendPoint] = useState<HoveredTrendPoint | null>(null);
@@ -47,6 +82,10 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
     items: any[];
   } | null>(null);
   const [listSearch, setListSearch] = useState('');
+
+  const getItemDate = (item: any): Date | null => {
+    return parseFlexibleLocalDate(item?.thoigian || item?.ngay_tao, item?.id);
+  };
 
   const handleOpenListModal = (
     title: string, 
@@ -63,7 +102,7 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
       const year = customYear !== undefined ? customYear : selectedYear;
       const val = customVal !== undefined ? customVal : (pType === 'month' ? selectedMonth : pType === 'quarter' ? selectedQuarter : selectedYear);
       items = rawItems.filter(item => {
-        const itemDate = parseItemDate(item.thoigian || item.ngay_tao);
+        const itemDate = getItemDate(item);
         return isItemInPeriod(itemDate, pType, year, val);
       });
     }
@@ -75,7 +114,7 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
     const periodValue = periodType === 'month' ? selectedMonth : selectedQuarter;
     const items = data.vuviec.filter(item => {
       if (item.loai !== label) return false;
-      const itemDate = parseItemDate(item.thoigian || item.ngay_tao);
+      const itemDate = getItemDate(item);
       return isItemInPeriod(itemDate, periodType, selectedYear, periodValue);
     });
     setListSearch('');
@@ -134,9 +173,10 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
         );
       }
       if (item.thoigian) {
+        const parsedTime = parseFlexibleLocalDate(item.thoigian, item.id);
         metaItems.push(
           <span key="time" className="text-[9px] text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
-            {new Date(item.thoigian).toLocaleString('vi-VN')}
+            {parsedTime ? parsedTime.toLocaleString('vi-VN') : item.thoigian}
           </span>
         );
       }
@@ -273,27 +313,20 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
     );
   };
 
-  // Helper: Dynamically generate year list from 2020 to current year + 1
+  // Helper: Dynamically generate year list from 2020 to current system year + 1
   const yearsList = useMemo(() => {
-    const currentYear = new Date().getFullYear();
+    const currentYear = systemNow.getFullYear();
+    const maxYear = Math.max(currentYear + 1, selectedYear);
     const list = [];
-    for (let y = 2020; y <= currentYear + 1; y++) {
+    for (let y = 2020; y <= maxYear; y++) {
       list.push(y);
     }
     return list;
-  }, []);
+  }, [systemNow, selectedYear]);
 
-  // Helper: Parse Date properly
-  const parseItemDate = (dateStr?: string): Date => {
-    if (dateStr) {
-      const d = new Date(dateStr);
-      if (!isNaN(d.getTime())) return d;
-    }
-    return new Date();
-  };
-
-  // Helper: check if item is in specified period
-  const isItemInPeriod = (itemDate: Date, type: 'month' | 'quarter' | 'year', year: number, val: number): boolean => {
+  // Helper: check if item is in specified period (Local Time)
+  const isItemInPeriod = (itemDate: Date | null, type: 'month' | 'quarter' | 'year', year: number, val: number): boolean => {
+    if (!itemDate) return false;
     const itemYear = itemDate.getFullYear();
     if (type === 'year') {
       return itemYear === year;
@@ -328,9 +361,7 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
       prevYear = selectedYear - 1;
     }
 
-    // System adoption is 2026, so comparing to 2025 or earlier has no historical data.
-    // Also, Yearly comparison comparing 2026 to 2025 is not intuitive/useful.
-    const hasComparison = periodType !== 'year' && prevYear >= 2026;
+    const hasComparison = prevYear >= 2020;
     return { prevYear, prevVal, hasComparison };
   }, [periodType, selectedYear, selectedMonth, selectedQuarter]);
 
@@ -346,7 +377,7 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
       let prevPeriod = 0;
 
       items.forEach(item => {
-        const itemDate = parseItemDate(item.thoigian || item.ngay_tao);
+        const itemDate = getItemDate(item);
         if (isItemInPeriod(itemDate, periodType, year, val)) {
           current++;
         } else if (prevPeriodInfo.hasComparison && isItemInPeriod(itemDate, periodType, prevPeriodInfo.prevYear, prevPeriodInfo.prevVal)) {
@@ -384,7 +415,7 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
     const periodValue = periodType === 'month' ? selectedMonth : selectedQuarter;
     const wardVuViec = data.vuviec
       .filter(item => {
-        const itemDate = parseItemDate(item.thoigian || item.ngay_tao);
+        const itemDate = getItemDate(item);
         return isItemInPeriod(itemDate, periodType, selectedYear, periodValue);
       });
 
@@ -467,9 +498,9 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
     } else if (periodType === 'quarter') {
       m = selectedQuarter * 3;
     } else {
-      const currentYear = new Date().getFullYear();
+      const currentYear = systemNow.getFullYear();
       if (selectedYear === currentYear) {
-        m = new Date().getMonth() + 1; // current month
+        m = systemNow.getMonth() + 1; // current month
       } else {
         m = 12;
       }
@@ -491,7 +522,8 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
 
     return months.map(mInfo => {
       const count = rawList.filter((item: any) => {
-        const itemDate = parseItemDate(item.thoigian || item.ngay_tao);
+        const itemDate = getItemDate(item);
+        if (!itemDate) return false;
         return itemDate.getFullYear() === mInfo.year && (itemDate.getMonth() + 1) === mInfo.month;
       }).length;
       return {
@@ -501,7 +533,7 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
         month: mInfo.month
       };
     });
-  }, [data, selectedYear, selectedMonth, selectedQuarter, periodType, trendEntity]);
+  }, [data, selectedYear, selectedMonth, selectedQuarter, periodType, trendEntity, systemNow]);
 
   // Generate trend line path for SVG (Flat straight segmented line)
   const trendLineProps = useMemo(() => {
@@ -580,16 +612,25 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
                 BÁO CÁO THỐNG KÊ AN NINH TRẬT TỰ
               </h2>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-                Hệ thống thông tin quản lý an ninh trật tự • Dữ liệu nội bộ
+                Hệ thống thông tin quản lý an ninh trật tự • Phường Bình Minh
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 hover:bg-slate-50 text-slate-400 hover:text-slate-700 rounded-lg transition-all cursor-pointer border border-slate-100"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2.5">
+            <div
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50/70 border border-sky-100 text-sky-700 text-[11px] font-bold"
+              title="Đồng bộ theo đồng hồ máy trạm nội bộ"
+            >
+              <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+              <span>Hiện tại: {formatVnDateTime(systemNow)}</span>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 hover:bg-slate-50 text-slate-400 hover:text-slate-700 rounded-lg transition-all cursor-pointer border border-slate-100"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Content Container */}
@@ -597,11 +638,25 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectCateg
 
           {/* Section: Filters */}
           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-lg text-slate-600 font-semibold text-xs">
                 <MapPin className="w-3.5 h-3.5 text-sky-600" />
                 <span>Phạm vi: Toàn bộ địa bàn</span>
               </div>
+              {isViewingCurrentPeriod ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
+                  Đang xem kỳ hiện tại ({getCurrentPeriodLabel()})
+                </span>
+              ) : (
+                <button
+                  onClick={resetToCurrentPeriod}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                  title="Quay về tháng/quý/năm hiện tại của hệ thống"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Về kỳ hiện tại</span>
+                </button>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
