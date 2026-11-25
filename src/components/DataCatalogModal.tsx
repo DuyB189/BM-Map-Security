@@ -275,6 +275,7 @@ export default function DataCatalogModal({
 	const [searchText, setSearchText] = useState("");
 	const [typeFilter, setTypeFilter] = useState("");
 	const [statusFilter, setStatusFilter] = useState("");
+	const [creatorFilter, setCreatorFilter] = useState("");
 	const [periodFilter, setPeriodFilter] = useState<"" | "today" | "month" | "quarter" | "year">(
 		"",
 	);
@@ -302,6 +303,7 @@ export default function DataCatalogModal({
 	useEffect(() => {
 		setTypeFilter("");
 		setStatusFilter("");
+		setCreatorFilter("");
 		setPeriodFilter("");
 		setCurrentPage(1);
 		setSelectedIds(new Set());
@@ -311,7 +313,7 @@ export default function DataCatalogModal({
 	// Reset page to 1 when search/filter changes
 	useEffect(() => {
 		setCurrentPage(1);
-	}, [searchText, typeFilter, statusFilter, periodFilter, pageSize]);
+	}, [searchText, typeFilter, statusFilter, creatorFilter, periodFilter, pageSize]);
 
 	// Keyboard ESC handler
 	useEffect(() => {
@@ -386,6 +388,16 @@ export default function DataCatalogModal({
 		return Array.from(s).sort((a, b) => a.localeCompare(b, "vi"));
 	}, [rawItems, activeTarget]);
 
+	const uniqueCreators = useMemo(() => {
+		const s = new Set<string>();
+		rawItems.forEach((item) => {
+			if (item.nguoi_tao && String(item.nguoi_tao).trim()) {
+				s.add(String(item.nguoi_tao).trim());
+			}
+		});
+		return Array.from(s).sort((a, b) => a.localeCompare(b, "vi"));
+	}, [rawItems]);
+
 	// Filtered + Sorted items (handles 1,000+ rows cleanly via useMemo)
 	const processedItems = useMemo(() => {
 		const q = searchText.trim().toLowerCase();
@@ -401,6 +413,9 @@ export default function DataCatalogModal({
 			}
 			if (statusFilter) {
 				if (getStatusOrSeverity(item, activeTarget).trim() !== statusFilter) return false;
+			}
+			if (creatorFilter) {
+				if (String(item.nguoi_tao || "").trim() !== creatorFilter) return false;
 			}
 			if (periodFilter) {
 				const dt = parseFlexibleLocalDate(item.thoigian || item.ngay_tao, item.id);
@@ -442,6 +457,8 @@ export default function DataCatalogModal({
 					item.quan_ly,
 					item.trangthai,
 					item.mucdo,
+					item.nguoi_tao,
+					item.nguoi_cap_nhat,
 					item.lng !== undefined ? `${item.lng}, ${item.lat}` : "",
 				]
 					.filter(Boolean)
@@ -481,6 +498,7 @@ export default function DataCatalogModal({
 		searchText,
 		typeFilter,
 		statusFilter,
+		creatorFilter,
 		periodFilter,
 		sortField,
 		sortDir,
@@ -530,7 +548,9 @@ export default function DataCatalogModal({
 	if (!show || suspendOverlay) return null;
 
 	const isLayerHidden = hiddenLayers.includes(activeTarget);
-	const hasActiveFilters = Boolean(searchText || typeFilter || statusFilter || periodFilter);
+	const hasActiveFilters = Boolean(
+		searchText || typeFilter || statusFilter || creatorFilter || periodFilter,
+	);
 
 	const toggleSort = (field: "title" | "type" | "status" | "date") => {
 		if (sortField === field) {
@@ -650,6 +670,10 @@ export default function DataCatalogModal({
 		if (sourceList.length === 0) return;
 
 		const rows = sourceList.map((item, idx) => {
+			const auditCols = {
+				"Người tạo": item.nguoi_tao || "",
+				"Người cập nhật cuối": item.nguoi_cap_nhat || "",
+			};
 			if (activeTarget === "vuviec-list") {
 				return {
 					STT: idx + 1,
@@ -663,6 +687,7 @@ export default function DataCatalogModal({
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
 					"Ngày tạo": item.ngay_tao ? formatDate(item.ngay_tao) : "",
+					...auditCols,
 				};
 			}
 			if (activeTarget === "camera-list") {
@@ -677,6 +702,7 @@ export default function DataCatalogModal({
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
 					"Ngày tạo": item.ngay_tao ? formatDate(item.ngay_tao) : "",
+					...auditCols,
 				};
 			}
 			if (activeTarget === "doituong-list") {
@@ -691,6 +717,7 @@ export default function DataCatalogModal({
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
 					"Ngày tạo": item.ngay_tao ? formatDate(item.ngay_tao) : "",
+					...auditCols,
 				};
 			}
 			if (activeTarget === "cskd-list") {
@@ -715,6 +742,7 @@ export default function DataCatalogModal({
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
 					"Ngày tạo": item.ngay_tao ? formatDate(String(item.ngay_tao)) : "",
+					...auditCols,
 				};
 			}
 			if (activeTarget === "diemnong-list") {
@@ -729,6 +757,7 @@ export default function DataCatalogModal({
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
 					"Ngày tạo": item.ngay_tao ? formatDate(String(item.ngay_tao)) : "",
+					...auditCols,
 				};
 			}
 			if (activeTarget === "coquan-list") {
@@ -740,6 +769,7 @@ export default function DataCatalogModal({
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
 					"Ngày tạo": item.ngay_tao ? formatDate(String(item.ngay_tao)) : "",
+					...auditCols,
 				};
 			}
 			const startLng = item.lng !== undefined ? item.lng : (item.coordinates?.[0]?.[0] ?? "");
@@ -759,6 +789,7 @@ export default function DataCatalogModal({
 				"Vĩ độ": startLat,
 				"Danh sách tọa độ tuyến": coordTrail,
 				"Ngày tạo": item.ngay_tao ? formatDate(String(item.ngay_tao)) : "",
+				...auditCols,
 			};
 		});
 
@@ -988,6 +1019,21 @@ export default function DataCatalogModal({
 							</select>
 						)}
 
+						{/* Dynamic Creator Filter */}
+						{uniqueCreators.length > 0 && (
+							<select
+								value={creatorFilter}
+								onChange={(e) => setCreatorFilter(e.target.value)}
+								className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-sky-500 cursor-pointer max-w-[200px]">
+								<option value="">Mọi tài khoản tạo ({uniqueCreators.length})</option>
+								{uniqueCreators.map((creator) => (
+									<option key={creator} value={creator}>
+										Người tạo: {creator}
+									</option>
+								))}
+							</select>
+						)}
+
 						{/* Time Period Filter */}
 						<div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 gap-1.5">
 							<Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -1010,6 +1056,7 @@ export default function DataCatalogModal({
 									setSearchText("");
 									setTypeFilter("");
 									setStatusFilter("");
+									setCreatorFilter("");
 									setPeriodFilter("");
 								}}
 								className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer">
@@ -1083,6 +1130,7 @@ export default function DataCatalogModal({
 												setSearchText("");
 												setTypeFilter("");
 												setStatusFilter("");
+												setCreatorFilter("");
 												setPeriodFilter("");
 											}}
 											className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-white hover:bg-slate-900 cursor-pointer">
@@ -1178,6 +1226,7 @@ export default function DataCatalogModal({
 												{renderSortIcon("date")}
 											</div>
 										</th>
+										<th className="py-3 px-3">Người tạo</th>
 										<th className="py-3 pl-3 pr-6 text-right w-40">Thao tác</th>
 									</tr>
 								</thead>
@@ -1365,6 +1414,29 @@ export default function DataCatalogModal({
 															: "—"}
 												</td>
 
+												{/* Column 5b: Creator / Editor Attribution */}
+												<td className="py-3 px-3 whitespace-nowrap">
+													{item.nguoi_tao ? (
+														<div className="space-y-0.5">
+															<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono text-[11px] font-bold">
+																<User className="w-3 h-3 text-sky-600 shrink-0" />
+																{item.nguoi_tao}
+															</span>
+															{item.nguoi_cap_nhat &&
+																item.nguoi_cap_nhat !==
+																	item.nguoi_tao && (
+																	<div className="text-[10px] text-slate-400 font-mono">
+																		Sửa: {item.nguoi_cap_nhat}
+																	</div>
+																)}
+														</div>
+													) : (
+														<span className="text-slate-300 text-[11px]">
+															—
+														</span>
+													)}
+												</td>
+
 												{/* Column 6: Quick Actions */}
 												<td
 													className="py-3 pl-3 pr-6 text-right whitespace-nowrap"
@@ -1473,17 +1545,25 @@ export default function DataCatalogModal({
 											<div
 												className="pt-3 border-t border-slate-100 flex items-center justify-between"
 												onClick={(e) => e.stopPropagation()}>
-												<span className="text-[10px] font-mono text-slate-400">
-													{item.thoigian
-														? formatDate(String(item.thoigian))
-														: item.ngay_tao
-															? formatDate(String(item.ngay_tao))
-															: formatCoordPair(
-																	item.lat,
-																	item.lng,
-																	4,
-																)}
-												</span>
+												<div className="flex flex-col gap-0.5 min-w-0">
+													<span className="text-[10px] font-mono text-slate-400">
+														{item.thoigian
+															? formatDate(String(item.thoigian))
+															: item.ngay_tao
+																? formatDate(String(item.ngay_tao))
+																: formatCoordPair(
+																		item.lat,
+																		item.lng,
+																		4,
+																	)}
+													</span>
+													{item.nguoi_tao && (
+														<span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-slate-600 truncate">
+															<User className="w-2.5 h-2.5 text-sky-600 shrink-0" />
+															{item.nguoi_tao}
+														</span>
+													)}
+												</div>
 												<div className="flex items-center gap-1">
 													<button
 														type="button"
@@ -1625,6 +1705,18 @@ export default function DataCatalogModal({
 											label: "Ngày tạo hồ sơ",
 											val: inspectedItem.ngay_tao
 												? formatDate(inspectedItem.ngay_tao)
+												: "",
+											mono: true,
+										},
+										{
+											label: "Tài khoản tạo",
+											val: inspectedItem.nguoi_tao,
+											mono: true,
+										},
+										{
+											label: "Cập nhật lần cuối bởi",
+											val: inspectedItem.nguoi_cap_nhat
+												? `${inspectedItem.nguoi_cap_nhat}${inspectedItem.ngay_cap_nhat ? ` (${formatDate(inspectedItem.ngay_cap_nhat)})` : ""}`
 												: "",
 											mono: true,
 										},

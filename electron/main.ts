@@ -402,6 +402,7 @@ const MASTER_ENC_PRIV_B64 =
 
 interface StoredAccount {
 	username: string;
+	fullName?: string;
 	passwordSalt: string;
 	passwordHash: string;
 	recoverySalt: string;
@@ -412,6 +413,21 @@ interface StoredAccount {
 	lockedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
+}
+
+interface StoredSubAccount {
+	username: string;
+	fullName: string;
+	role: "admin" | "staff";
+	passwordSalt: string;
+	passwordHash: string;
+	isActive: boolean;
+	failedAttempts: number;
+	isLocked: boolean;
+	lockedAt: string | null;
+	createdAt: string;
+	updatedAt: string;
+	createdBy: string;
 }
 
 interface SystemAuditLog {
@@ -426,6 +442,9 @@ interface SystemAuditLog {
 		| "UNLOCK_FAILED"
 		| "PASSWORD_CHANGED"
 		| "RECOVERY_KEY_ROTATED"
+		| "USER_CREATED"
+		| "USER_UPDATED"
+		| "USER_DELETED"
 		| "LOGOUT"
 		| "MAP_UPDATED"
 		| "DATA_CREATED"
@@ -446,6 +465,7 @@ interface SystemAuditLog {
 interface AuthVaultData {
 	version: 1;
 	account: StoredAccount | null;
+	users?: StoredSubAccount[];
 	logs: SystemAuditLog[];
 }
 
@@ -458,6 +478,7 @@ interface EncryptedVaultEnvelope {
 }
 
 let currentSessionUser: string | null = null;
+let currentSessionRole: "owner" | "admin" | "staff" | null = null;
 let cachedMachineKey: Buffer | null = null;
 
 const getAuthVaultPath = () => {
@@ -590,7 +611,7 @@ const readAuthVault = (): { vault: AuthVaultData; tampered: boolean } => {
 	const vaultPath = getAuthVaultPath();
 	if (!fs.existsSync(vaultPath)) {
 		return {
-			vault: { version: 1, account: null, logs: [] },
+			vault: { version: 1, account: null, users: [], logs: [] },
 			tampered: false,
 		};
 	}
@@ -628,6 +649,7 @@ const readAuthVault = (): { vault: AuthVaultData; tampered: boolean } => {
 			vault: {
 				version: 1,
 				account: parsed.account || null,
+				users: Array.isArray(parsed.users) ? parsed.users : [],
 				logs: Array.isArray(parsed.logs) ? parsed.logs : [],
 			},
 			tampered: false,
@@ -635,7 +657,7 @@ const readAuthVault = (): { vault: AuthVaultData; tampered: boolean } => {
 	} catch (err) {
 		console.error("[Auth Vault] Failed to decrypt or verify vault integrity:", err);
 		return {
-			vault: { version: 1, account: null, logs: [] },
+			vault: { version: 1, account: null, users: [], logs: [] },
 			tampered: true,
 		};
 	}
@@ -757,6 +779,7 @@ ipcMain.handle("auth:setup", (_event, payload: { username: string; password: str
 
 	vault.account = {
 		username: cleanUser,
+		fullName: "Chủ quản hệ thống",
 		passwordSalt: pwHashed.salt,
 		passwordHash: pwHashed.hash,
 		recoverySalt: recHashed.salt,
@@ -768,6 +791,7 @@ ipcMain.handle("auth:setup", (_event, payload: { username: string; password: str
 		createdAt: nowIso,
 		updatedAt: nowIso,
 	};
+	vault.users = [];
 
 	appendAuditLog(
 		"INIT_ACCOUNT",
@@ -778,10 +802,13 @@ ipcMain.handle("auth:setup", (_event, payload: { username: string; password: str
 	);
 	saveAuthVault(vault);
 	currentSessionUser = cleanUser;
+	currentSessionRole = "owner";
 
 	return {
 		success: true,
 		username: cleanUser,
+		fullName: "Chủ quản hệ thống",
+		role: "owner" as const,
 		recoveryKey,
 	};
 });
@@ -811,6 +838,7 @@ ipcMain.handle("auth:login", (_event, payload: { username: string; password: str
 	const attemptedUser = (payload?.username || "").trim();
 	const rawPass = payload?.password || "";
 	const account = vault.account;
+	const subUsers = vault.users || [];
 
 	if (account.isLocked) {
 		appendAuditLog(
@@ -828,6 +856,125 @@ ipcMain.handle("auth:login", (_event, payload: { username: string; password: str
 			remainingAttempts: 0,
 			lockedAt: account.lockedAt,
 			error: "Hệ thống đang bị khóa do nhập sai mật khẩu quá 5 lần. Vui lòng dùng Mã Mở Khóa Chủ Quản để mở lại.",
+		};
+	}
+
+	// Kiểm tra tài khoản phụ trước nếu tên đăng nhập khớp với tài khoản người dùng đã cấp
+	const matchedSubUser = subUsers.find(
+		(u) => u.username.toLowerCase() === attemptedUser.toLowerCase(),
+	);
+
+	if (matchedSubUser) {
+		if (!matchedSubUser.isActive) {
+			appendAuditLog(
+				"LOGIN_FAILED",
+				"warning",
+				matchedSubUser.username,
+				`Đăng nhập bị từ chối do tài khoản "${matchedSubUser.username}" đang bị tạm khóa`,
+				vault,
+			);
+			saveAuthVault(vault);
+			return {
+				success: false,
+				isLocked: false,
+				error: "Tài khoản này đang bị tạm ngưng hoạt động. Vui lòng liên hệ Quản trị viên.",
+			};
+		}
+
+		if (matchedSubUser.isLocked) {
+			appendAuditLog(
+				"LOGIN_FAILED",
+				"danger",
+				matchedSubUser.username,
+				`Cố gắng đăng nhập vào tài khoản đã bị khóa do nhập sai quá ${MAX_FAILED_ATTEMPTS} lần`,
+				vault,
+			);
+			saveAuthVault(vault);
+			return {
+				success: false,
+				isLocked: false,
+				error: `Tài khoản "${matchedSubUser.username}" đã bị khóa do nhập sai mật khẩu quá ${MAX_FAILED_ATTEMPTS} lần. Vui lòng liên hệ Quản trị viên để mở khóa.`,
+			};
+		}
+
+		const isSubPassMatch = verifySecret(
+			rawPass,
+			matchedSubUser.passwordSalt,
+			matchedSubUser.passwordHash,
+		);
+
+		if (!isSubPassMatch) {
+			matchedSubUser.failedAttempts = Math.min(
+				MAX_FAILED_ATTEMPTS,
+				(matchedSubUser.failedAttempts || 0) + 1,
+			);
+			matchedSubUser.updatedAt = new Date().toISOString();
+
+			if (matchedSubUser.failedAttempts >= MAX_FAILED_ATTEMPTS) {
+				matchedSubUser.isLocked = true;
+				matchedSubUser.lockedAt = new Date().toISOString();
+				appendAuditLog(
+					"LOGIN_FAILED",
+					"warning",
+					matchedSubUser.username,
+					`Đăng nhập thất bại lần ${matchedSubUser.failedAttempts}/${MAX_FAILED_ATTEMPTS} (Sai mật khẩu)`,
+					vault,
+				);
+				appendAuditLog(
+					"ACCOUNT_LOCKED",
+					"danger",
+					matchedSubUser.username,
+					`Tự động khóa tài khoản "${matchedSubUser.username}" do đăng nhập sai liên tiếp ${MAX_FAILED_ATTEMPTS} lần`,
+					vault,
+				);
+				saveAuthVault(vault);
+				return {
+					success: false,
+					isLocked: false,
+					error: `Tài khoản "${matchedSubUser.username}" đã bị khóa sau ${MAX_FAILED_ATTEMPTS} lần nhập sai mật khẩu. Liên hệ Quản trị viên để mở lại.`,
+				};
+			}
+
+			const remSub = MAX_FAILED_ATTEMPTS - matchedSubUser.failedAttempts;
+			appendAuditLog(
+				"LOGIN_FAILED",
+				"warning",
+				matchedSubUser.username,
+				`Đăng nhập thất bại lần ${matchedSubUser.failedAttempts}/${MAX_FAILED_ATTEMPTS} (Sai mật khẩu) — Còn ${remSub} lần thử`,
+				vault,
+			);
+			saveAuthVault(vault);
+			return {
+				success: false,
+				isLocked: false,
+				error: `Mật khẩu không chính xác. Còn ${remSub}/${MAX_FAILED_ATTEMPTS} lần thử trước khi khóa tài khoản này.`,
+			};
+		}
+
+		const hadSubFailures = matchedSubUser.failedAttempts > 0;
+		matchedSubUser.failedAttempts = 0;
+		matchedSubUser.isLocked = false;
+		matchedSubUser.lockedAt = null;
+		matchedSubUser.updatedAt = new Date().toISOString();
+		currentSessionUser = matchedSubUser.username;
+		currentSessionRole = matchedSubUser.role;
+
+		appendAuditLog(
+			"LOGIN_SUCCESS",
+			"success",
+			matchedSubUser.username,
+			hadSubFailures
+				? `Đăng nhập thành công (${matchedSubUser.fullName} — đặt lại bộ đếm nhập sai về 0)`
+				: `Đăng nhập vào hệ thống thành công (${matchedSubUser.fullName})`,
+			vault,
+		);
+		saveAuthVault(vault);
+
+		return {
+			success: true,
+			username: matchedSubUser.username,
+			fullName: matchedSubUser.fullName,
+			role: matchedSubUser.role,
 		};
 	}
 
@@ -897,14 +1044,15 @@ ipcMain.handle("auth:login", (_event, payload: { username: string; password: str
 	}
 	account.updatedAt = new Date().toISOString();
 	currentSessionUser = account.username;
+	currentSessionRole = "owner";
 
 	appendAuditLog(
 		"LOGIN_SUCCESS",
 		"success",
 		account.username,
 		hadPriorFailures
-			? "Đăng nhập thành công (đã đặt lại bộ đếm cảnh báo nhập sai về 0)"
-			: "Đăng nhập vào hệ thống thành công",
+			? "Đăng nhập thành công (Chủ quản — đã đặt lại bộ đếm cảnh báo nhập sai về 0)"
+			: "Đăng nhập vào hệ thống thành công (Chủ quản)",
 		vault,
 	);
 	saveAuthVault(vault);
@@ -912,6 +1060,8 @@ ipcMain.handle("auth:login", (_event, payload: { username: string; password: str
 	return {
 		success: true,
 		username: account.username,
+		fullName: account.fullName || "Chủ quản hệ thống",
+		role: "owner" as const,
 	};
 });
 
@@ -1059,10 +1209,13 @@ ipcMain.handle(
 
 		saveAuthVault(vault);
 		currentSessionUser = account.username;
+		currentSessionRole = "owner";
 
 		return {
 			success: true,
 			username: account.username,
+			fullName: account.fullName || "Chủ quản hệ thống",
+			role: "owner" as const,
 			...(generatedNewKey ? { newRecoveryKey: generatedNewKey } : {}),
 		};
 	},
@@ -1072,17 +1225,61 @@ ipcMain.handle(
 	"auth:change-password",
 	(
 		_event,
-		payload: { currentPassword: string; newPassword: string; rotateRecoveryKey?: boolean },
+		payload: {
+			currentPassword: string;
+			newPassword: string;
+			rotateRecoveryKey?: boolean;
+			username?: string;
+		},
 	) => {
 		const { vault, tampered } = readAuthVault();
 		if (tampered || !vault.account) {
 			return { success: false, error: "Không thể truy cập dữ liệu tài khoản." };
 		}
 
-		const account = vault.account;
+		const targetUsername = (payload?.username || currentSessionUser || vault.account.username).trim();
 		const currPass = payload?.currentPassword || "";
 		const nextPass = payload?.newPassword || "";
 
+		if (nextPass.length < 6) {
+			return { success: false, error: "Mật khẩu mới phải có ít nhất 6 ký tự." };
+		}
+
+		// Kiểm tra nếu đang đổi mật khẩu của tài khoản phụ
+		const subUsers = vault.users || [];
+		const subAccount = subUsers.find(
+			(u) => u.username.toLowerCase() === targetUsername.toLowerCase(),
+		);
+
+		if (subAccount) {
+			if (!verifySecret(currPass, subAccount.passwordSalt, subAccount.passwordHash)) {
+				appendAuditLog(
+					"LOGIN_FAILED",
+					"warning",
+					subAccount.username,
+					"Nhập sai mật khẩu hiện tại khi yêu cầu đổi mật khẩu trong phần Thiết lập",
+					vault,
+				);
+				saveAuthVault(vault);
+				return { success: false, error: "Mật khẩu hiện tại không chính xác." };
+			}
+			const pwHashed = hashSecret(nextPass);
+			subAccount.passwordSalt = pwHashed.salt;
+			subAccount.passwordHash = pwHashed.hash;
+			subAccount.updatedAt = new Date().toISOString();
+
+			appendAuditLog(
+				"PASSWORD_CHANGED",
+				"info",
+				subAccount.username,
+				`Tài khoản "${subAccount.username}" tự đổi mật khẩu thành công`,
+				vault,
+			);
+			saveAuthVault(vault);
+			return { success: true };
+		}
+
+		const account = vault.account;
 		if (!verifySecret(currPass, account.passwordSalt, account.passwordHash)) {
 			appendAuditLog(
 				"LOGIN_FAILED",
@@ -1093,10 +1290,6 @@ ipcMain.handle(
 			);
 			saveAuthVault(vault);
 			return { success: false, error: "Mật khẩu hiện tại không chính xác." };
-		}
-
-		if (nextPass.length < 6) {
-			return { success: false, error: "Mật khẩu mới phải có ít nhất 6 ký tự." };
 		}
 
 		const pwHashed = hashSecret(nextPass);
@@ -1117,7 +1310,7 @@ ipcMain.handle(
 			"PASSWORD_CHANGED",
 			"info",
 			account.username,
-			"Đổi mật khẩu tài khoản quản trị thành công",
+			"Đổi mật khẩu tài khoản chủ quản thành công",
 			vault,
 		);
 		if (generatedNewKey) {
@@ -1142,8 +1335,299 @@ ipcMain.handle("auth:logout", (_event, payload?: { username?: string }) => {
 	const user = payload?.username || currentSessionUser || "Quản trị viên";
 	appendAuditLog("LOGOUT", "info", user, "Đăng xuất khỏi phiên làm việc");
 	currentSessionUser = null;
+	currentSessionRole = null;
 	return { success: true };
 });
+
+// --------- Multi-Account User Management IPCs (Owner / Admin) ---------
+const resolveActorPermissions = (
+	vault: AuthVaultData,
+	actorUsername?: string,
+): { username: string; role: "owner" | "admin" | "staff" } | null => {
+	if (!vault.account) return null;
+	const name = (actorUsername || currentSessionUser || "").trim();
+	if (!name) return null;
+	if (name.toLowerCase() === vault.account.username.toLowerCase()) {
+		return { username: vault.account.username, role: "owner" };
+	}
+	const foundSub = (vault.users || []).find(
+		(u) => u.username.toLowerCase() === name.toLowerCase() && u.isActive && !u.isLocked,
+	);
+	if (foundSub) {
+		return { username: foundSub.username, role: foundSub.role };
+	}
+	return null;
+};
+
+ipcMain.handle("auth:list-users", () => {
+	const { vault, tampered } = readAuthVault();
+	if (tampered || !vault.account) {
+		return { success: false, users: [], error: "Không thể đọc danh sách tài khoản." };
+	}
+
+	const ownerItem = {
+		username: vault.account.username,
+		fullName: vault.account.fullName || "Chủ quản hệ thống",
+		role: "owner" as const,
+		isOwner: true,
+		isActive: true,
+		isLocked: vault.account.isLocked,
+		failedAttempts: vault.account.failedAttempts,
+		createdAt: vault.account.createdAt,
+		updatedAt: vault.account.updatedAt,
+		createdBy: "Hệ thống",
+	};
+
+	const subItems = (vault.users || []).map((u) => ({
+		username: u.username,
+		fullName: u.fullName,
+		role: u.role,
+		isOwner: false,
+		isActive: u.isActive,
+		isLocked: u.isLocked,
+		failedAttempts: u.failedAttempts,
+		createdAt: u.createdAt,
+		updatedAt: u.updatedAt,
+		createdBy: u.createdBy,
+	}));
+
+	return {
+		success: true,
+		users: [ownerItem, ...subItems],
+	};
+});
+
+ipcMain.handle(
+	"auth:create-user",
+	(
+		_event,
+		payload: {
+			username: string;
+			fullName: string;
+			password: string;
+			role?: "admin" | "staff";
+			actorUsername?: string;
+		},
+	) => {
+		const { vault, tampered } = readAuthVault();
+		if (tampered || !vault.account) {
+			return { success: false, error: "Không thể truy cập kho tài khoản bảo mật." };
+		}
+
+		const actor = resolveActorPermissions(vault, payload?.actorUsername);
+		if (!actor || (actor.role !== "owner" && actor.role !== "admin")) {
+			return {
+				success: false,
+				error: "Bạn không có quyền tạo tài khoản người dùng mới.",
+			};
+		}
+
+		const cleanUser = (payload?.username || "").trim();
+		const cleanFullName = (payload?.fullName || "").trim() || cleanUser;
+		const rawPass = payload?.password || "";
+		const role: "admin" | "staff" = payload?.role === "admin" ? "admin" : "staff";
+
+		if (cleanUser.length < 3 || cleanUser.length > 32) {
+			return { success: false, error: "Tên đăng nhập phải từ 3 đến 32 ký tự." };
+		}
+		if (!/^[a-zA-Z0-9._-]+$/.test(cleanUser)) {
+			return {
+				success: false,
+				error: "Tên đăng nhập chỉ được chứa chữ cái không dấu, số và ký tự . _ -",
+			};
+		}
+		if (rawPass.length < 6) {
+			return { success: false, error: "Mật khẩu phải có ít nhất 6 ký tự." };
+		}
+
+		const users = vault.users || [];
+		const existsOwner = vault.account.username.toLowerCase() === cleanUser.toLowerCase();
+		const existsSub = users.some((u) => u.username.toLowerCase() === cleanUser.toLowerCase());
+		if (existsOwner || existsSub) {
+			return { success: false, error: `Tên tài khoản "${cleanUser}" đã tồn tại trong hệ thống.` };
+		}
+
+		const pwHashed = hashSecret(rawPass);
+		const nowIso = new Date().toISOString();
+		const newUser: StoredSubAccount = {
+			username: cleanUser,
+			fullName: cleanFullName,
+			role,
+			passwordSalt: pwHashed.salt,
+			passwordHash: pwHashed.hash,
+			isActive: true,
+			failedAttempts: 0,
+			isLocked: false,
+			lockedAt: null,
+			createdAt: nowIso,
+			updatedAt: nowIso,
+			createdBy: actor.username,
+		};
+
+		vault.users = [...users, newUser];
+		const roleLabel = role === "admin" ? "Quản trị viên" : "Cán bộ nhập liệu";
+		appendAuditLog(
+			"USER_CREATED",
+			"success",
+			actor.username,
+			`Tạo tài khoản mới "${cleanUser}" (${cleanFullName} — Vai trò: ${roleLabel})`,
+			vault,
+			{ targetName: cleanUser },
+		);
+		saveAuthVault(vault);
+
+		return {
+			success: true,
+			user: {
+				username: newUser.username,
+				fullName: newUser.fullName,
+				role: newUser.role,
+				isOwner: false,
+				isActive: newUser.isActive,
+				isLocked: newUser.isLocked,
+				failedAttempts: newUser.failedAttempts,
+				createdAt: newUser.createdAt,
+				updatedAt: newUser.updatedAt,
+				createdBy: newUser.createdBy,
+			},
+		};
+	},
+);
+
+ipcMain.handle(
+	"auth:update-user",
+	(
+		_event,
+		payload: {
+			username: string;
+			fullName?: string;
+			role?: "admin" | "staff";
+			isActive?: boolean;
+			unlock?: boolean;
+			newPassword?: string;
+			actorUsername?: string;
+		},
+	) => {
+		const { vault, tampered } = readAuthVault();
+		if (tampered || !vault.account) {
+			return { success: false, error: "Không thể truy cập kho tài khoản bảo mật." };
+		}
+
+		const actor = resolveActorPermissions(vault, payload?.actorUsername);
+		if (!actor || (actor.role !== "owner" && actor.role !== "admin")) {
+			return { success: false, error: "Bạn không có quyền quản trị tài khoản." };
+		}
+
+		const targetName = (payload?.username || "").trim();
+		if (vault.account.username.toLowerCase() === targetName.toLowerCase()) {
+			return {
+				success: false,
+				error: "Không thể thay đổi trạng thái tài khoản Chủ quản tại đây.",
+			};
+		}
+
+		const users = vault.users || [];
+		const target = users.find((u) => u.username.toLowerCase() === targetName.toLowerCase());
+		if (!target) {
+			return { success: false, error: "Không tìm thấy tài khoản cần cập nhật." };
+		}
+
+		const changes: string[] = [];
+
+		if (typeof payload.fullName === "string" && payload.fullName.trim() && payload.fullName.trim() !== target.fullName) {
+			target.fullName = payload.fullName.trim();
+			changes.push(`Đổi họ tên thành "${target.fullName}"`);
+		}
+
+		if (payload.role && (payload.role === "admin" || payload.role === "staff") && payload.role !== target.role) {
+			target.role = payload.role;
+			changes.push(
+				`Đổi vai trò thành ${payload.role === "admin" ? "Quản trị viên" : "Cán bộ nhập liệu"}`,
+			);
+		}
+
+		if (typeof payload.isActive === "boolean" && payload.isActive !== target.isActive) {
+			if (target.username.toLowerCase() === actor.username.toLowerCase() && !payload.isActive) {
+				return { success: false, error: "Không thể tự khóa tài khoản đang đăng nhập." };
+			}
+			target.isActive = payload.isActive;
+			changes.push(payload.isActive ? "Kích hoạt lại tài khoản" : "Tạm khóa tài khoản");
+		}
+
+		if (payload.unlock && target.isLocked) {
+			target.isLocked = false;
+			target.failedAttempts = 0;
+			target.lockedAt = null;
+			changes.push("Mở khóa đăng nhập (xóa bộ đếm sai mật khẩu)");
+		}
+
+		if (typeof payload.newPassword === "string" && payload.newPassword.length > 0) {
+			if (payload.newPassword.length < 6) {
+				return { success: false, error: "Mật khẩu mới phải có ít nhất 6 ký tự." };
+			}
+			const pwHashed = hashSecret(payload.newPassword);
+			target.passwordSalt = pwHashed.salt;
+			target.passwordHash = pwHashed.hash;
+			target.failedAttempts = 0;
+			target.isLocked = false;
+			target.lockedAt = null;
+			changes.push("Đặt lại mật khẩu mới");
+		}
+
+		target.updatedAt = new Date().toISOString();
+		appendAuditLog(
+			"USER_UPDATED",
+			"info",
+			actor.username,
+			`Cập nhật tài khoản "${target.username}": ${changes.length > 0 ? changes.join(", ") : "Lưu thông tin"}`,
+			vault,
+			{ targetName: target.username },
+		);
+		saveAuthVault(vault);
+		return { success: true };
+	},
+);
+
+ipcMain.handle(
+	"auth:delete-user",
+	(_event, payload: { username: string; actorUsername?: string }) => {
+		const { vault, tampered } = readAuthVault();
+		if (tampered || !vault.account) {
+			return { success: false, error: "Không thể truy cập kho tài khoản bảo mật." };
+		}
+
+		const actor = resolveActorPermissions(vault, payload?.actorUsername);
+		if (!actor || (actor.role !== "owner" && actor.role !== "admin")) {
+			return { success: false, error: "Bạn không có quyền xóa tài khoản." };
+		}
+
+		const targetName = (payload?.username || "").trim();
+		if (vault.account.username.toLowerCase() === targetName.toLowerCase()) {
+			return { success: false, error: "Không thể xóa tài khoản Chủ quản gốc của hệ thống." };
+		}
+		if (actor.username.toLowerCase() === targetName.toLowerCase()) {
+			return { success: false, error: "Không thể tự xóa tài khoản đang đăng nhập." };
+		}
+
+		const users = vault.users || [];
+		const target = users.find((u) => u.username.toLowerCase() === targetName.toLowerCase());
+		if (!target) {
+			return { success: false, error: "Không tìm thấy tài khoản cần xóa." };
+		}
+
+		vault.users = users.filter((u) => u.username.toLowerCase() !== targetName.toLowerCase());
+		appendAuditLog(
+			"USER_DELETED",
+			"danger",
+			actor.username,
+			`Xóa tài khoản người dùng "${target.username}" (${target.fullName}) — Toàn bộ dữ liệu và nhật ký cũ vẫn được lưu vết`,
+			vault,
+			{ targetName: target.username },
+		);
+		saveAuthVault(vault);
+		return { success: true };
+	},
+);
 
 ipcMain.handle(
 	"auth:log-action",

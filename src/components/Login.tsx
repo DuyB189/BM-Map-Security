@@ -14,10 +14,10 @@ import {
 	CheckCircle2,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { authService } from "../utils/authService";
+import { authService, UserRole } from "../utils/authService";
 
 interface LoginProps {
-	onLogin: (username: string) => void;
+	onLogin: (username: string, role?: UserRole, fullName?: string) => void;
 }
 
 type AuthViewMode = "loading" | "setup" | "recovery-receipt" | "login" | "locked" | "unlock";
@@ -179,7 +179,7 @@ export default function Login({ onLogin }: LoginProps) {
 			setIsLoading(false);
 
 			if (res.success && res.username) {
-				onLogin(res.username);
+				onLogin(res.username, res.role || "owner", res.fullName);
 				return;
 			}
 
@@ -527,7 +527,7 @@ export default function Login({ onLogin }: LoginProps) {
 
 						<div className="space-y-1.5 text-left">
 							<label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-1">
-								Tài khoản quản trị
+								Tên tài khoản
 							</label>
 							<div className="relative flex items-center">
 								<User className="w-4 h-4 absolute left-3.5 text-slate-400" />

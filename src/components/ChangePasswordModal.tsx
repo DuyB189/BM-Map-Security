@@ -6,9 +6,14 @@ import { authService } from "../utils/authService";
 interface ChangePasswordModalProps {
 	show: boolean;
 	onClose: () => void;
+	isOwner?: boolean;
 }
 
-export default function ChangePasswordModal({ show, onClose }: ChangePasswordModalProps) {
+export default function ChangePasswordModal({
+	show,
+	onClose,
+	isOwner = true,
+}: ChangePasswordModalProps) {
 	const [currentPassword, setCurrentPassword] = useState("");
 	const [newPassword, setNewPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
@@ -171,17 +176,19 @@ export default function ChangePasswordModal({ show, onClose }: ChangePasswordMod
 								</div>
 							</div>
 
-							<label className="flex items-center gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200/80 cursor-pointer">
-								<input
-									type="checkbox"
-									checked={rotateRecoveryKey}
-									onChange={(e) => setRotateRecoveryKey(e.target.checked)}
-									className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
-								/>
-								<span className="text-xs font-semibold text-slate-700">
-									Đồng thời cấp lại Mã Mở Khóa Chủ Quản mới (hủy mã cũ)
-								</span>
-							</label>
+							{isOwner && (
+								<label className="flex items-center gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200/80 cursor-pointer">
+									<input
+										type="checkbox"
+										checked={rotateRecoveryKey}
+										onChange={(e) => setRotateRecoveryKey(e.target.checked)}
+										className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+									/>
+									<span className="text-xs font-semibold text-slate-700">
+										Đồng thời cấp lại Mã Mở Khóa Chủ Quản mới (hủy mã cũ)
+									</span>
+								</label>
+							)}
 
 							{error && (
 								<div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold">

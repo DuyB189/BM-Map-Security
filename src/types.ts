@@ -10,6 +10,10 @@ export interface Commune {
   lng: number;
   lat: number;
   loai?: string;
+  ngay_tao?: string;
+  nguoi_tao?: string;
+  nguoi_cap_nhat?: string;
+  ngay_cap_nhat?: string;
 }
 
 export interface Incident {
@@ -24,6 +28,9 @@ export interface Incident {
   lng: number;
   lat: number;
   ngay_tao?: string;
+  nguoi_tao?: string;
+  nguoi_cap_nhat?: string;
+  ngay_cap_nhat?: string;
   suspectIds?: (string | number)[];
 }
 
@@ -38,6 +45,9 @@ export interface Camera {
   lng: number;
   lat: number;
   ngay_tao?: string;
+  nguoi_tao?: string;
+  nguoi_cap_nhat?: string;
+  ngay_cap_nhat?: string;
 }
 
 export interface Person {
@@ -51,6 +61,9 @@ export interface Person {
   lng: number;
   lat: number;
   ngay_tao?: string;
+  nguoi_tao?: string;
+  nguoi_cap_nhat?: string;
+  ngay_cap_nhat?: string;
 }
 
 
@@ -62,6 +75,9 @@ export interface Agency {
   lng: number;
   lat: number;
   ngay_tao?: string;
+  nguoi_tao?: string;
+  nguoi_cap_nhat?: string;
+  ngay_cap_nhat?: string;
 }
 
 export interface Business {
@@ -90,6 +106,9 @@ export interface Business {
   lng: number;
   lat: number;
   ngay_tao?: string;
+  nguoi_tao?: string;
+  nguoi_cap_nhat?: string;
+  ngay_cap_nhat?: string;
 }
 
 export interface Hotspot {
@@ -103,6 +122,9 @@ export interface Hotspot {
   lng: number;
   lat: number;
   ngay_tao?: string;
+  nguoi_tao?: string;
+  nguoi_cap_nhat?: string;
+  ngay_cap_nhat?: string;
 }
 
 export interface Route {
@@ -115,6 +137,9 @@ export interface Route {
   lat?: number;
   coordinates?: [number, number][];
   ngay_tao?: string;
+  nguoi_tao?: string;
+  nguoi_cap_nhat?: string;
+  ngay_cap_nhat?: string;
 }
 
 export interface GISData {

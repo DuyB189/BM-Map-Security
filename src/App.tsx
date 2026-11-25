@@ -24,7 +24,7 @@ import { GISData } from "./types";
 import { getSvgPath } from "./utils/icons";
 import { formatDate } from "./utils/date";
 import { getLocalDateStr, getLocalDateTimeStr } from "./utils/dateUtils";
-import { authService, getCategoryDisplayName } from "./utils/authService";
+import { authService, getCategoryDisplayName, UserRole } from "./utils/authService";
 
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
@@ -45,6 +45,7 @@ import SystemHistoryModal from "./components/SystemHistoryModal";
 import OfflineMapModal from "./components/OfflineMapModal";
 import ChangePasswordModal from "./components/ChangePasswordModal";
 import BackupRestoreModal from "./components/BackupRestoreModal";
+import UserManagementModal from "./components/UserManagementModal";
 import Login from "./components/Login";
 import binhminhBoundaryData from "./data/binhminh.json";
 
@@ -55,7 +56,7 @@ const BINH_MINH_BOUNDS: [[number, number], [number, number]] = [
 
 const TAY_NINH_BOUNDS: [[number, number], [number, number]] = [
 	[105.78, 10.92],
-	[106.48, 11.80],
+	[106.48, 11.8],
 ];
 
 const BOUNDARY_LAYER_IDS = [
@@ -144,14 +145,10 @@ const describeEntityChanges = (oldItem: any, newItem: any): string => {
 		typeof newItem.lng === "number" &&
 		(Math.abs(oldItem.lng - newItem.lng) > 1e-6 || Math.abs(oldItem.lat - newItem.lat) > 1e-6)
 	) {
-		changes.push(
-			`Dời tọa độ (${newItem.lng.toFixed(5)}, ${newItem.lat.toFixed(5)})`,
-		);
+		changes.push(`Dời tọa độ (${newItem.lng.toFixed(5)}, ${newItem.lat.toFixed(5)})`);
 	}
 
-	if (
-		JSON.stringify(oldItem.coordinates || []) !== JSON.stringify(newItem.coordinates || [])
-	) {
+	if (JSON.stringify(oldItem.coordinates || []) !== JSON.stringify(newItem.coordinates || [])) {
 		changes.push(`Vẽ lại lộ trình (${newItem.coordinates?.length || 0} điểm)`);
 	}
 
@@ -168,6 +165,18 @@ export default function App() {
 	const [isLoggedIn, setIsLoggedIn] = useState(() => {
 		return sessionStorage.getItem("gis_session") === "active";
 	});
+	const [activeUsername, setActiveUsername] = useState<string>(() => {
+		return sessionStorage.getItem("gis_user") || "Quản trị viên";
+	});
+	const [activeUserRole, setActiveUserRole] = useState<UserRole>(() => {
+		const saved = sessionStorage.getItem("gis_role");
+		if (saved === "owner" || saved === "admin" || saved === "staff") return saved;
+		return "owner";
+	});
+
+	const getCurrentActorUsername = () => {
+		return sessionStorage.getItem("gis_user") || activeUsername || "Quản trị viên";
+	};
 
 	useEffect(() => {
 		authService
@@ -176,16 +185,22 @@ export default function App() {
 				if (!status.initialized || status.isLocked) {
 					sessionStorage.removeItem("gis_session");
 					sessionStorage.removeItem("gis_user");
+					sessionStorage.removeItem("gis_role");
+					sessionStorage.removeItem("gis_fullname");
 					setIsLoggedIn(false);
 				}
 			})
 			.catch(() => {});
 	}, []);
 
-	const handleLogin = (username: string) => {
+	const handleLogin = (username: string, role: UserRole = "owner", fullName?: string) => {
 		setIsLoggedIn(true);
+		setActiveUsername(username);
+		setActiveUserRole(role);
 		sessionStorage.setItem("gis_session", "active");
 		sessionStorage.setItem("gis_user", username);
+		sessionStorage.setItem("gis_role", role);
+		if (fullName) sessionStorage.setItem("gis_fullname", fullName);
 	};
 
 	const handleLogout = () => {
@@ -194,6 +209,8 @@ export default function App() {
 			authService.logout(activeUser).catch(() => {});
 			sessionStorage.removeItem("gis_session");
 			sessionStorage.removeItem("gis_user");
+			sessionStorage.removeItem("gis_role");
+			sessionStorage.removeItem("gis_fullname");
 			localStorage.removeItem("gis_session");
 			localStorage.removeItem("gis_user");
 			setIsLoggedIn(false);
@@ -289,7 +306,8 @@ export default function App() {
 			authService.logAction({
 				eventType: "DB_RESET",
 				status: "danger",
-				message: "Khôi phục cài đặt gốc: Xóa toàn bộ dữ liệu nghiệp vụ GIS về trạng thái trống",
+				message:
+					"Khôi phục cài đặt gốc: Xóa toàn bộ dữ liệu nghiệp vụ GIS về trạng thái trống",
 			});
 			alert("Đã xóa sạch cơ sở dữ liệu và khôi phục cài đặt gốc thành công!");
 		}
@@ -713,6 +731,7 @@ export default function App() {
 	const [showSystemHistoryModal, setShowSystemHistoryModal] = useState(false);
 	const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 	const [showBackupRestoreModal, setShowBackupRestoreModal] = useState(false);
+	const [showUserManagementModal, setShowUserManagementModal] = useState(false);
 	const [mapStatus, setMapStatus] = useState<{
 		exists: boolean;
 		path: string;
@@ -1624,12 +1643,16 @@ export default function App() {
 
 		const nowLocalStr = getLocalDateTimeStr(); // YYYY-MM-DDTHH:mm (Local Time)
 		const currentDateStr = getLocalDateStr(); // YYYY-MM-DD (Local Time)
+		const actorUser = getCurrentActorUsername();
 
 		const baseItem = {
 			lng: selectedCoords[0],
 			lat: selectedCoords[1],
 			id: Date.now(),
 			ngay_tao: currentDateStr,
+			nguoi_tao: actorUser,
+			nguoi_cap_nhat: actorUser,
+			ngay_cap_nhat: nowLocalStr,
 		};
 
 		let newItem: any = { ...baseItem };
@@ -1838,12 +1861,15 @@ export default function App() {
 		saveOfflineData(newData);
 		const catName = getCategoryDisplayName(category);
 		const delTitle = deletedItem ? getEntityTitle(deletedItem) : targetIdStr;
+		const creatorNote = deletedItem?.nguoi_tao
+			? ` (do tài khoản ${deletedItem.nguoi_tao} tạo)`
+			: "";
 		authService.logAction({
 			eventType: "DATA_DELETED",
 			status: "danger",
 			category,
 			targetName: delTitle,
-			message: `Xóa ${catName}: "${delTitle}"`,
+			message: `Xóa ${catName}: "${delTitle}"${creatorNote}`,
 		});
 	};
 
@@ -1857,17 +1883,13 @@ export default function App() {
 		} else if (category === "camera-list") {
 			newData.camera = newData.camera.filter((c) => !idSet.has(String(c.id || c.ten)));
 		} else if (category === "doituong-list") {
-			newData.doituong = newData.doituong.filter(
-				(d) => !idSet.has(String(d.id || d.hoten)),
-			);
+			newData.doituong = newData.doituong.filter((d) => !idSet.has(String(d.id || d.hoten)));
 		} else if (category === "coquan-list") {
 			newData.coquan = newData.coquan.filter((c) => !idSet.has(String(c.ten)));
 		} else if (category === "cskd-list") {
 			newData.cskd = newData.cskd.filter((c) => !idSet.has(String(c.ten)));
 		} else if (category === "diemnong-list") {
-			newData.diemnong = newData.diemnong.filter(
-				(d) => !idSet.has(String(d.id || d.ten)),
-			);
+			newData.diemnong = newData.diemnong.filter((d) => !idSet.has(String(d.id || d.ten)));
 		} else if (category === "tuyenduong-list") {
 			newData.tuyenduong = newData.tuyenduong.filter(
 				(t) => !idSet.has(String(t.id || t.ten)),
@@ -1885,11 +1907,19 @@ export default function App() {
 	};
 
 	const handleAddNewDoiTuongFromVuViec = (newDt: any) => {
+		const actorUser = getCurrentActorUsername();
+		const stampedDt = {
+			...newDt,
+			ngay_tao: newDt.ngay_tao || getLocalDateStr(),
+			nguoi_tao: newDt.nguoi_tao || actorUser,
+			nguoi_cap_nhat: actorUser,
+			ngay_cap_nhat: getLocalDateTimeStr(),
+		};
 		const newData = { ...data };
-		newData.doituong.push(newDt);
+		newData.doituong.push(stampedDt);
 		setData(newData);
 		saveOfflineData(newData);
-		const dtName = getEntityTitle(newDt);
+		const dtName = getEntityTitle(stampedDt);
 		authService.logAction({
 			eventType: "DATA_CREATED",
 			status: "success",
@@ -1998,28 +2028,43 @@ export default function App() {
 		}
 	};
 
+	const withUpdateAuditFields = <T extends Record<string, any>>(
+		prevItem: any,
+		nextItem: T,
+	): T => {
+		const actorUser = getCurrentActorUsername();
+		return {
+			...nextItem,
+			ngay_tao: prevItem?.ngay_tao || nextItem.ngay_tao,
+			nguoi_tao: prevItem?.nguoi_tao || nextItem.nguoi_tao,
+			nguoi_cap_nhat: actorUser,
+			ngay_cap_nhat: getLocalDateTimeStr(),
+		};
+	};
+
 	const handleUpdateIncident = (updated: any) => {
 		const newData = { ...data };
 		const updatedIdStr = String(updated.id || updated.loai);
 		const index = newData.vuviec.findIndex((v) => String(v.id || v.loai) === updatedIdStr);
 		if (index > -1) {
 			const prevItem = newData.vuviec[index];
-			newData.vuviec[index] = updated;
+			const audited = withUpdateAuditFields(prevItem, updated);
+			newData.vuviec[index] = audited;
 			saveOfflineData(newData);
-			const itemTitle = getEntityTitle(updated);
+			const itemTitle = getEntityTitle(audited);
 			authService.logAction({
 				eventType: "DATA_UPDATED",
 				status: "info",
 				category: "vuviec-list",
 				targetName: itemTitle,
-				message: `Cập nhật Vụ việc "${itemTitle}" — ${describeEntityChanges(prevItem, updated)}`,
+				message: `Cập nhật Vụ việc "${itemTitle}" — ${describeEntityChanges(prevItem, audited)}`,
 			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.id || selectedDetails.loai) === updatedIdStr &&
 				selectedDetails.category === "vuviec-list"
 			) {
-				setSelectedDetails({ ...updated, category: "vuviec-list" });
+				setSelectedDetails({ ...audited, category: "vuviec-list" });
 			}
 		}
 		setEditIncidentData(null);
@@ -2031,22 +2076,23 @@ export default function App() {
 		const index = newData.camera.findIndex((c) => String(c.id || c.ten) === updatedIdStr);
 		if (index > -1) {
 			const prevItem = newData.camera[index];
-			newData.camera[index] = updated;
+			const audited = withUpdateAuditFields(prevItem, updated);
+			newData.camera[index] = audited;
 			saveOfflineData(newData);
-			const itemTitle = getEntityTitle(updated);
+			const itemTitle = getEntityTitle(audited);
 			authService.logAction({
 				eventType: "DATA_UPDATED",
 				status: "info",
 				category: "camera-list",
 				targetName: itemTitle,
-				message: `Cập nhật Camera "${itemTitle}" — ${describeEntityChanges(prevItem, updated)}`,
+				message: `Cập nhật Camera "${itemTitle}" — ${describeEntityChanges(prevItem, audited)}`,
 			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.id || selectedDetails.ten) === updatedIdStr &&
 				selectedDetails.category === "camera-list"
 			) {
-				setSelectedDetails({ ...updated, category: "camera-list" });
+				setSelectedDetails({ ...audited, category: "camera-list" });
 			}
 		}
 		setEditCameraData(null);
@@ -2058,22 +2104,23 @@ export default function App() {
 		const index = newData.doituong.findIndex((d) => String(d.id || d.hoten) === updatedIdStr);
 		if (index > -1) {
 			const prevItem = newData.doituong[index];
-			newData.doituong[index] = updated;
+			const audited = withUpdateAuditFields(prevItem, updated);
+			newData.doituong[index] = audited;
 			saveOfflineData(newData);
-			const itemTitle = getEntityTitle(updated);
+			const itemTitle = getEntityTitle(audited);
 			authService.logAction({
 				eventType: "DATA_UPDATED",
 				status: "info",
 				category: "doituong-list",
 				targetName: itemTitle,
-				message: `Cập nhật Đối tượng "${itemTitle}" — ${describeEntityChanges(prevItem, updated)}`,
+				message: `Cập nhật Đối tượng "${itemTitle}" — ${describeEntityChanges(prevItem, audited)}`,
 			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.id || selectedDetails.hoten) === updatedIdStr &&
 				selectedDetails.category === "doituong-list"
 			) {
-				setSelectedDetails({ ...updated, category: "doituong-list" });
+				setSelectedDetails({ ...audited, category: "doituong-list" });
 			}
 		}
 		setEditDoiTuongData(null);
@@ -2087,22 +2134,23 @@ export default function App() {
 			const prevItem = newData.coquan[index];
 			const cleanUpdated = { ...updated };
 			delete cleanUpdated._originalTen;
-			newData.coquan[index] = cleanUpdated;
+			const audited = withUpdateAuditFields(prevItem, cleanUpdated);
+			newData.coquan[index] = audited;
 			saveOfflineData(newData);
-			const itemTitle = getEntityTitle(cleanUpdated);
+			const itemTitle = getEntityTitle(audited);
 			authService.logAction({
 				eventType: "DATA_UPDATED",
 				status: "info",
 				category: "coquan-list",
 				targetName: itemTitle,
-				message: `Cập nhật Cơ quan nhà nước "${itemTitle}" — ${describeEntityChanges(prevItem, cleanUpdated)}`,
+				message: `Cập nhật Cơ quan nhà nước "${itemTitle}" — ${describeEntityChanges(prevItem, audited)}`,
 			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.ten) === String(originalName) &&
 				selectedDetails.category === "coquan-list"
 			) {
-				setSelectedDetails({ ...cleanUpdated, category: "coquan-list" });
+				setSelectedDetails({ ...audited, category: "coquan-list" });
 			}
 		}
 		setEditCoQuanData(null);
@@ -2116,22 +2164,23 @@ export default function App() {
 			const prevItem = newData.cskd[index];
 			const cleanUpdated = { ...updated };
 			delete cleanUpdated._originalTen;
-			newData.cskd[index] = cleanUpdated;
+			const audited = withUpdateAuditFields(prevItem, cleanUpdated);
+			newData.cskd[index] = audited;
 			saveOfflineData(newData);
-			const itemTitle = getEntityTitle(cleanUpdated);
+			const itemTitle = getEntityTitle(audited);
 			authService.logAction({
 				eventType: "DATA_UPDATED",
 				status: "info",
 				category: "cskd-list",
 				targetName: itemTitle,
-				message: `Cập nhật Cơ sở kinh doanh "${itemTitle}" — ${describeEntityChanges(prevItem, cleanUpdated)}`,
+				message: `Cập nhật Cơ sở kinh doanh "${itemTitle}" — ${describeEntityChanges(prevItem, audited)}`,
 			});
 			if (
 				selectedDetails &&
 				String(selectedDetails.ten) === String(originalName) &&
 				selectedDetails.category === "cskd-list"
 			) {
-				setSelectedDetails({ ...cleanUpdated, category: "cskd-list" });
+				setSelectedDetails({ ...audited, category: "cskd-list" });
 			}
 		}
 		setEditCskdData(null);
@@ -2151,15 +2200,16 @@ export default function App() {
 				cleanUpdated.radius === "" || isNaN(parseInt(cleanUpdated.radius))
 					? 0
 					: parseInt(cleanUpdated.radius);
-			newData.diemnong[index] = cleanUpdated;
+			const audited = withUpdateAuditFields(prevItem, cleanUpdated);
+			newData.diemnong[index] = audited;
 			saveOfflineData(newData);
-			const itemTitle = getEntityTitle(cleanUpdated);
+			const itemTitle = getEntityTitle(audited);
 			authService.logAction({
 				eventType: "DATA_UPDATED",
 				status: "info",
 				category: "diemnong-list",
 				targetName: itemTitle,
-				message: `Cập nhật Điểm nóng "${itemTitle}" — ${describeEntityChanges(prevItem, cleanUpdated)}`,
+				message: `Cập nhật Điểm nóng "${itemTitle}" — ${describeEntityChanges(prevItem, audited)}`,
 			});
 			if (
 				selectedDetails &&
@@ -2167,7 +2217,7 @@ export default function App() {
 					String(updated.id || originalName) &&
 				selectedDetails.category === "diemnong-list"
 			) {
-				setSelectedDetails({ ...cleanUpdated, category: "diemnong-list" });
+				setSelectedDetails({ ...audited, category: "diemnong-list" });
 			}
 		}
 		setEditDiemNongData(null);
@@ -2183,15 +2233,16 @@ export default function App() {
 			const prevItem = newData.tuyenduong[index];
 			const cleanUpdated = { ...updated };
 			delete cleanUpdated._originalTen;
-			newData.tuyenduong[index] = cleanUpdated;
+			const audited = withUpdateAuditFields(prevItem, cleanUpdated);
+			newData.tuyenduong[index] = audited;
 			saveOfflineData(newData);
-			const itemTitle = getEntityTitle(cleanUpdated);
+			const itemTitle = getEntityTitle(audited);
 			authService.logAction({
 				eventType: "DATA_UPDATED",
 				status: "info",
 				category: "tuyenduong-list",
 				targetName: itemTitle,
-				message: `Cập nhật Tuyến đường "${itemTitle}" — ${describeEntityChanges(prevItem, cleanUpdated)}`,
+				message: `Cập nhật Tuyến đường "${itemTitle}" — ${describeEntityChanges(prevItem, audited)}`,
 			});
 			if (
 				selectedDetails &&
@@ -2199,7 +2250,7 @@ export default function App() {
 					String(updated.id || originalName) &&
 				selectedDetails.category === "tuyenduong-list"
 			) {
-				setSelectedDetails({ ...cleanUpdated, category: "tuyenduong-list" });
+				setSelectedDetails({ ...audited, category: "tuyenduong-list" });
 			}
 		}
 		setEditTuyenDuongData(null);
@@ -2216,21 +2267,32 @@ export default function App() {
 	};
 
 	const handleImportExcelData = (targetCategory: string, importedItems: any[]) => {
+		const actorUser = getCurrentActorUsername();
+		const nowDate = getLocalDateStr();
+		const nowDateTime = getLocalDateTimeStr();
+		const stampedItems = importedItems.map((item) => ({
+			...item,
+			ngay_tao: item.ngay_tao || nowDate,
+			nguoi_tao: item.nguoi_tao || actorUser,
+			nguoi_cap_nhat: actorUser,
+			ngay_cap_nhat: nowDateTime,
+		}));
+
 		const newData = { ...data };
 		if (targetCategory === "vuviec-list") {
-			newData.vuviec = [...newData.vuviec, ...importedItems];
+			newData.vuviec = [...newData.vuviec, ...stampedItems];
 		} else if (targetCategory === "camera-list") {
-			newData.camera = [...newData.camera, ...importedItems];
+			newData.camera = [...newData.camera, ...stampedItems];
 		} else if (targetCategory === "doituong-list") {
-			newData.doituong = [...newData.doituong, ...importedItems];
+			newData.doituong = [...newData.doituong, ...stampedItems];
 		} else if (targetCategory === "coquan-list") {
-			newData.coquan = [...newData.coquan, ...importedItems];
+			newData.coquan = [...newData.coquan, ...stampedItems];
 		} else if (targetCategory === "cskd-list") {
-			newData.cskd = [...newData.cskd, ...importedItems];
+			newData.cskd = [...newData.cskd, ...stampedItems];
 		} else if (targetCategory === "diemnong-list") {
-			newData.diemnong = [...newData.diemnong, ...importedItems];
+			newData.diemnong = [...newData.diemnong, ...stampedItems];
 		} else if (targetCategory === "tuyenduong-list") {
-			newData.tuyenduong = [...newData.tuyenduong, ...importedItems];
+			newData.tuyenduong = [...newData.tuyenduong, ...stampedItems];
 		}
 		saveOfflineData(newData);
 		const catName = getCategoryDisplayName(targetCategory);
@@ -2238,7 +2300,7 @@ export default function App() {
 			eventType: "DATA_IMPORTED",
 			status: "success",
 			category: targetCategory,
-			message: `Nhập dữ liệu hàng loạt từ Excel vào danh mục ${catName}: Thêm mới ${importedItems.length} bản ghi`,
+			message: `Nhập dữ liệu hàng loạt từ Excel vào danh mục ${catName}: Thêm mới ${stampedItems.length} bản ghi`,
 		});
 		setShowImportModal(false);
 	};
@@ -2527,9 +2589,11 @@ export default function App() {
 				onOpenOfflineMap={() => setShowOfflineMapModal(true)}
 				onOpenSystemHistory={() => setShowSystemHistoryModal(true)}
 				onOpenChangePassword={() => setShowChangePasswordModal(true)}
+				onOpenUserManagement={() => setShowUserManagementModal(true)}
 				onReloadApp={() => window.location.reload()}
 				onLogout={handleLogout}
-				activeUsername={sessionStorage.getItem("gis_user") || "Quản trị viên"}
+				activeUsername={activeUsername}
+				activeUserRole={activeUserRole}
 			/>
 
 			<Sidebar
@@ -2565,6 +2629,13 @@ export default function App() {
 			<ChangePasswordModal
 				show={showChangePasswordModal}
 				onClose={() => setShowChangePasswordModal(false)}
+				isOwner={activeUserRole === "owner"}
+			/>
+
+			<UserManagementModal
+				show={showUserManagementModal}
+				onClose={() => setShowUserManagementModal(false)}
+				activeUsername={activeUsername}
 			/>
 
 			<BackupRestoreModal
@@ -2607,8 +2678,8 @@ export default function App() {
 				setHiddenLayers={setHiddenLayers}
 				suspendOverlay={Boolean(
 					pickingLocationFor ||
-						isEditingRouteCoords ||
-						(showForm && formData.category === "tuyenduong-list"),
+					isEditingRouteCoords ||
+					(showForm && formData.category === "tuyenduong-list"),
 				)}
 				onLocateOnMap={(item, category) => {
 					setShowCatalogModal(false);

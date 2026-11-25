@@ -1,3 +1,31 @@
+export type UserRole = "owner" | "admin" | "staff";
+
+export interface ManagedUserAccount {
+	username: string;
+	fullName: string;
+	role: UserRole;
+	isOwner: boolean;
+	isActive: boolean;
+	isLocked: boolean;
+	failedAttempts: number;
+	createdAt: string;
+	updatedAt: string;
+	createdBy: string;
+}
+
+export const getRoleDisplayName = (role?: string): string => {
+	switch (role) {
+		case "owner":
+			return "Chủ quản hệ thống";
+		case "admin":
+			return "Quản trị viên";
+		case "staff":
+			return "Cán bộ nhập liệu";
+		default:
+			return "Người dùng";
+	}
+};
+
 export interface AuthStatus {
 	initialized: boolean;
 	isLocked: boolean;
@@ -16,6 +44,9 @@ export type AuditEventType =
 	| "UNLOCK_FAILED"
 	| "PASSWORD_CHANGED"
 	| "RECOVERY_KEY_ROTATED"
+	| "USER_CREATED"
+	| "USER_UPDATED"
+	| "USER_DELETED"
 	| "LOGOUT"
 	| "MAP_UPDATED"
 	| "DATA_CREATED"
@@ -133,7 +164,14 @@ export const authService = {
 	async setupAccount(
 		username: string,
 		password: string,
-	): Promise<{ success: boolean; username?: string; recoveryKey?: string; error?: string }> {
+	): Promise<{
+		success: boolean;
+		username?: string;
+		fullName?: string;
+		role?: UserRole;
+		recoveryKey?: string;
+		error?: string;
+	}> {
 		const ipc = getIpc();
 		if (ipc) {
 			return ipc.invoke("auth:setup", { username, password });
@@ -150,24 +188,35 @@ export const authService = {
 			return { success: false, error: "Mật khẩu phải có ít nhất 6 ký tự." };
 		}
 		const recoveryKey = generateBrowserRecoveryKey();
+		const nowIso = new Date().toISOString();
 		store.account = {
 			username: cleanUser,
+			fullName: "Chủ quản hệ thống",
 			password,
 			recoveryKey: normalizeKey(recoveryKey),
 			failedAttempts: 0,
 			isLocked: false,
 			lockedAt: null,
+			createdAt: nowIso,
+			updatedAt: nowIso,
 		};
+		store.users = [];
 		store.logs.unshift({
 			id: `LOG-${Date.now()}`,
-			timestamp: new Date().toISOString(),
+			timestamp: nowIso,
 			eventType: "INIT_ACCOUNT",
 			status: "info",
 			username: cleanUser,
 			message: "Khởi tạo tài khoản quản trị hệ thống lần đầu và cấp Mã Mở Khóa Chủ Quản",
 		});
 		writeBrowserStore(store);
-		return { success: true, username: cleanUser, recoveryKey };
+		return {
+			success: true,
+			username: cleanUser,
+			fullName: "Chủ quản hệ thống",
+			role: "owner",
+			recoveryKey,
+		};
 	},
 
 	async login(
@@ -176,6 +225,8 @@ export const authService = {
 	): Promise<{
 		success: boolean;
 		username?: string;
+		fullName?: string;
+		role?: UserRole;
 		isLocked?: boolean;
 		failedAttempts?: number;
 		remainingAttempts?: number;
@@ -210,6 +261,70 @@ export const authService = {
 				error: "Hệ thống đang bị khóa do nhập sai mật khẩu quá 5 lần.",
 			};
 		}
+
+		// Kiểm tra tài khoản phụ trong chế độ dev trình duyệt
+		const subUsers: any[] = Array.isArray(store.users) ? store.users : [];
+		const matchedSub = subUsers.find(
+			(u) => u.username.toLowerCase() === username.trim().toLowerCase(),
+		);
+		if (matchedSub) {
+			if (!matchedSub.isActive) {
+				return {
+					success: false,
+					isLocked: false,
+					error: "Tài khoản này đang bị tạm ngưng hoạt động. Vui lòng liên hệ Quản trị viên.",
+				};
+			}
+			if (matchedSub.isLocked) {
+				return {
+					success: false,
+					isLocked: false,
+					error: `Tài khoản "${matchedSub.username}" đã bị khóa do nhập sai quá 5 lần.`,
+				};
+			}
+			if (matchedSub.password !== password) {
+				matchedSub.failedAttempts = Math.min(5, (matchedSub.failedAttempts || 0) + 1);
+				if (matchedSub.failedAttempts >= 5) {
+					matchedSub.isLocked = true;
+					matchedSub.lockedAt = new Date().toISOString();
+				}
+				store.logs.unshift({
+					id: `LOG-${Date.now()}`,
+					timestamp: new Date().toISOString(),
+					eventType: "LOGIN_FAILED",
+					status: "warning",
+					username: matchedSub.username,
+					message: `Đăng nhập thất bại lần ${matchedSub.failedAttempts}/5 (Sai mật khẩu)`,
+				});
+				writeBrowserStore(store);
+				return {
+					success: false,
+					isLocked: false,
+					error: matchedSub.isLocked
+						? `Tài khoản "${matchedSub.username}" đã bị khóa sau 5 lần nhập sai mật khẩu.`
+						: `Mật khẩu không chính xác. Còn ${5 - matchedSub.failedAttempts}/5 lần thử.`,
+				};
+			}
+			matchedSub.failedAttempts = 0;
+			matchedSub.isLocked = false;
+			matchedSub.lockedAt = null;
+			store.logs.unshift({
+				id: `LOG-${Date.now()}`,
+				timestamp: new Date().toISOString(),
+				eventType: "LOGIN_SUCCESS",
+				status: "success",
+				username: matchedSub.username,
+				message: `Đăng nhập vào hệ thống thành công (${matchedSub.fullName})`,
+			});
+			writeBrowserStore(store);
+			return {
+				success: true,
+				username: matchedSub.username,
+				fullName: matchedSub.fullName,
+				role: matchedSub.role || "staff",
+			};
+		}
+
 		if (
 			username.trim().toLowerCase() !== acc.username.toLowerCase() ||
 			password !== acc.password
@@ -272,10 +387,15 @@ export const authService = {
 			eventType: "LOGIN_SUCCESS",
 			status: "success",
 			username: acc.username,
-			message: "Đăng nhập vào hệ thống thành công",
+			message: "Đăng nhập vào hệ thống thành công (Chủ quản)",
 		});
 		writeBrowserStore(store);
-		return { success: true, username: acc.username };
+		return {
+			success: true,
+			username: acc.username,
+			fullName: acc.fullName || "Chủ quản hệ thống",
+			role: "owner",
+		};
 	},
 
 	async verifyUnlockCode(recoveryKey: string): Promise<VerifyUnlockCodeResult> {
@@ -394,16 +514,42 @@ export const authService = {
 		newPassword: string,
 		rotateRecoveryKey = false,
 	): Promise<{ success: boolean; newRecoveryKey?: string; error?: string }> {
+		const activeUser = sessionStorage.getItem("gis_user") || undefined;
 		const ipc = getIpc();
 		if (ipc) {
 			return ipc.invoke("auth:change-password", {
 				currentPassword,
 				newPassword,
 				rotateRecoveryKey,
+				username: activeUser,
 			});
 		}
 		const store = readBrowserStore();
 		if (!store.account) return { success: false, error: "Chưa có tài khoản." };
+		const subUsers: any[] = Array.isArray(store.users) ? store.users : [];
+		const subTarget = activeUser
+			? subUsers.find((u) => u.username.toLowerCase() === activeUser.toLowerCase())
+			: null;
+		if (subTarget) {
+			if (subTarget.password !== currentPassword) {
+				return { success: false, error: "Mật khẩu hiện tại không chính xác." };
+			}
+			if (newPassword.length < 6) {
+				return { success: false, error: "Mật khẩu mới phải có ít nhất 6 ký tự." };
+			}
+			subTarget.password = newPassword;
+			subTarget.updatedAt = new Date().toISOString();
+			store.logs.unshift({
+				id: `LOG-${Date.now()}`,
+				timestamp: new Date().toISOString(),
+				eventType: "PASSWORD_CHANGED",
+				status: "info",
+				username: subTarget.username,
+				message: `Tài khoản "${subTarget.username}" tự đổi mật khẩu thành công`,
+			});
+			writeBrowserStore(store);
+			return { success: true };
+		}
 		if (store.account.password !== currentPassword) {
 			store.logs.unshift({
 				id: `LOG-${Date.now()}`,
@@ -431,10 +577,187 @@ export const authService = {
 			eventType: "PASSWORD_CHANGED",
 			status: "info",
 			username: store.account.username,
-			message: "Đổi mật khẩu tài khoản quản trị thành công",
+			message: "Đổi mật khẩu tài khoản chủ quản thành công",
 		});
 		writeBrowserStore(store);
 		return { success: true, newRecoveryKey: newKey };
+	},
+
+	async listUsers(): Promise<{
+		success: boolean;
+		users: ManagedUserAccount[];
+		error?: string;
+	}> {
+		const ipc = getIpc();
+		if (ipc) {
+			return ipc.invoke("auth:list-users");
+		}
+		const store = readBrowserStore();
+		if (!store.account) return { success: false, users: [], error: "Chưa khởi tạo hệ thống." };
+		const ownerItem: ManagedUserAccount = {
+			username: store.account.username,
+			fullName: store.account.fullName || "Chủ quản hệ thống",
+			role: "owner",
+			isOwner: true,
+			isActive: true,
+			isLocked: !!store.account.isLocked,
+			failedAttempts: store.account.failedAttempts || 0,
+			createdAt: store.account.createdAt || new Date().toISOString(),
+			updatedAt: store.account.updatedAt || new Date().toISOString(),
+			createdBy: "Hệ thống",
+		};
+		const subItems: ManagedUserAccount[] = (store.users || []).map((u: any) => ({
+			username: u.username,
+			fullName: u.fullName,
+			role: u.role || "staff",
+			isOwner: false,
+			isActive: u.isActive !== false,
+			isLocked: !!u.isLocked,
+			failedAttempts: u.failedAttempts || 0,
+			createdAt: u.createdAt || new Date().toISOString(),
+			updatedAt: u.updatedAt || new Date().toISOString(),
+			createdBy: u.createdBy || store.account.username,
+		}));
+		return { success: true, users: [ownerItem, ...subItems] };
+	},
+
+	async createUser(payload: {
+		username: string;
+		fullName: string;
+		password: string;
+		role: "admin" | "staff";
+	}): Promise<{ success: boolean; user?: ManagedUserAccount; error?: string }> {
+		const actorUsername = sessionStorage.getItem("gis_user") || undefined;
+		const ipc = getIpc();
+		if (ipc) {
+			return ipc.invoke("auth:create-user", { ...payload, actorUsername });
+		}
+		const store = readBrowserStore();
+		if (!store.account) return { success: false, error: "Chưa khởi tạo hệ thống." };
+		const cleanUser = payload.username.trim();
+		if (cleanUser.length < 3) {
+			return { success: false, error: "Tên đăng nhập phải có ít nhất 3 ký tự." };
+		}
+		if (payload.password.length < 6) {
+			return { success: false, error: "Mật khẩu phải có ít nhất 6 ký tự." };
+		}
+		store.users = Array.isArray(store.users) ? store.users : [];
+		if (
+			store.account.username.toLowerCase() === cleanUser.toLowerCase() ||
+			store.users.some((u: any) => u.username.toLowerCase() === cleanUser.toLowerCase())
+		) {
+			return { success: false, error: `Tên tài khoản "${cleanUser}" đã tồn tại.` };
+		}
+		const nowIso = new Date().toISOString();
+		const newU = {
+			username: cleanUser,
+			fullName: payload.fullName.trim() || cleanUser,
+			role: payload.role,
+			password: payload.password,
+			isActive: true,
+			isLocked: false,
+			failedAttempts: 0,
+			lockedAt: null,
+			createdAt: nowIso,
+			updatedAt: nowIso,
+			createdBy: actorUsername || store.account.username,
+		};
+		store.users.push(newU);
+		store.logs.unshift({
+			id: `LOG-${Date.now()}`,
+			timestamp: nowIso,
+			eventType: "USER_CREATED",
+			status: "success",
+			username: actorUsername || store.account.username,
+			targetName: cleanUser,
+			message: `Tạo tài khoản mới "${cleanUser}" (${newU.fullName})`,
+		});
+		writeBrowserStore(store);
+		return {
+			success: true,
+			user: {
+				username: newU.username,
+				fullName: newU.fullName,
+				role: newU.role,
+				isOwner: false,
+				isActive: true,
+				isLocked: false,
+				failedAttempts: 0,
+				createdAt: nowIso,
+				updatedAt: nowIso,
+				createdBy: newU.createdBy,
+			},
+		};
+	},
+
+	async updateUser(payload: {
+		username: string;
+		fullName?: string;
+		role?: "admin" | "staff";
+		isActive?: boolean;
+		unlock?: boolean;
+		newPassword?: string;
+	}): Promise<{ success: boolean; error?: string }> {
+		const actorUsername = sessionStorage.getItem("gis_user") || undefined;
+		const ipc = getIpc();
+		if (ipc) {
+			return ipc.invoke("auth:update-user", { ...payload, actorUsername });
+		}
+		const store = readBrowserStore();
+		const target = (store.users || []).find(
+			(u: any) => u.username.toLowerCase() === payload.username.toLowerCase(),
+		);
+		if (!target) return { success: false, error: "Không tìm thấy tài khoản." };
+		if (payload.fullName) target.fullName = payload.fullName.trim();
+		if (payload.role) target.role = payload.role;
+		if (typeof payload.isActive === "boolean") target.isActive = payload.isActive;
+		if (payload.unlock) {
+			target.isLocked = false;
+			target.failedAttempts = 0;
+		}
+		if (payload.newPassword) {
+			if (payload.newPassword.length < 6) {
+				return { success: false, error: "Mật khẩu mới phải có ít nhất 6 ký tự." };
+			}
+			target.password = payload.newPassword;
+			target.isLocked = false;
+			target.failedAttempts = 0;
+		}
+		target.updatedAt = new Date().toISOString();
+		store.logs.unshift({
+			id: `LOG-${Date.now()}`,
+			timestamp: target.updatedAt,
+			eventType: "USER_UPDATED",
+			status: "info",
+			username: actorUsername || store.account?.username || "Quản trị viên",
+			targetName: target.username,
+			message: `Cập nhật thông tin tài khoản "${target.username}"`,
+		});
+		writeBrowserStore(store);
+		return { success: true };
+	},
+
+	async deleteUser(username: string): Promise<{ success: boolean; error?: string }> {
+		const actorUsername = sessionStorage.getItem("gis_user") || undefined;
+		const ipc = getIpc();
+		if (ipc) {
+			return ipc.invoke("auth:delete-user", { username, actorUsername });
+		}
+		const store = readBrowserStore();
+		store.users = (store.users || []).filter(
+			(u: any) => u.username.toLowerCase() !== username.toLowerCase(),
+		);
+		store.logs.unshift({
+			id: `LOG-${Date.now()}`,
+			timestamp: new Date().toISOString(),
+			eventType: "USER_DELETED",
+			status: "danger",
+			username: actorUsername || store.account?.username || "Quản trị viên",
+			targetName: username,
+			message: `Xóa tài khoản người dùng "${username}"`,
+		});
+		writeBrowserStore(store);
+		return { success: true };
 	},
 
 	async logout(username?: string): Promise<void> {

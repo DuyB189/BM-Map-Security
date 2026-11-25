@@ -17,8 +17,10 @@ import {
 	PanelLeftOpen,
 	ShieldCheck,
 	HardDriveDownload,
+	Users,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { getRoleDisplayName, UserRole } from "../utils/authService";
 
 interface TopBarProps {
 	isMenuOpen: boolean;
@@ -37,9 +39,11 @@ interface TopBarProps {
 	onOpenOfflineMap: () => void;
 	onOpenSystemHistory: () => void;
 	onOpenChangePassword: () => void;
+	onOpenUserManagement: () => void;
 	onReloadApp: () => void;
 	onLogout: () => void;
 	activeUsername?: string;
+	activeUserRole?: UserRole;
 }
 
 export default function TopBar({
@@ -59,10 +63,13 @@ export default function TopBar({
 	onOpenOfflineMap,
 	onOpenSystemHistory,
 	onOpenChangePassword,
+	onOpenUserManagement,
 	onReloadApp,
 	onLogout,
 	activeUsername = "Quản trị viên",
+	activeUserRole = "owner",
 }: TopBarProps) {
+	const canManageUsers = activeUserRole === "owner" || activeUserRole === "admin";
 	const settingsRef = useRef<HTMLDivElement>(null);
 
 	// Tự động đóng menu Hệ thống khi bấm ra ngoài
@@ -200,13 +207,43 @@ export default function TopBar({
 									transition={{ duration: 0.15 }}
 									className="absolute right-0 top-full mt-2.5 w-80 bg-white/98 backdrop-blur-xl p-2.5 rounded-2xl z-[1200] shadow-2xl border border-slate-200 space-y-1">
 									<div className="px-3 py-2.5 bg-slate-50 rounded-xl border border-slate-100 mb-1.5">
-										<div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-											Đang đăng nhập
+										<div className="flex items-center justify-between gap-2">
+											<span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+												Đang đăng nhập
+											</span>
+											<span className="px-2 py-0.5 rounded-md bg-sky-100 text-sky-700 text-[10px] font-extrabold uppercase">
+												{getRoleDisplayName(activeUserRole)}
+											</span>
 										</div>
 										<div className="text-[13px] font-extrabold text-slate-800 mt-0.5 truncate">
 											Tài khoản: {activeUsername}
 										</div>
 									</div>
+
+									{canManageUsers && (
+										<button
+											type="button"
+											onClick={() => {
+												setShowSettings(false);
+												onOpenUserManagement();
+											}}
+											className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-violet-50 text-left transition-colors group cursor-pointer">
+											<div className="flex items-center gap-3 min-w-0">
+												<div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 group-hover:bg-violet-600 group-hover:text-white transition-colors">
+													<Users className="w-4 h-4" />
+												</div>
+												<div className="min-w-0">
+													<div className="text-[13px] font-bold text-slate-800 group-hover:text-violet-700 truncate">
+														Quản lý tài khoản người dùng
+													</div>
+													<div className="text-[11px] text-slate-500 truncate">
+														Tạo & phân quyền tài khoản sử dụng chung
+													</div>
+												</div>
+											</div>
+											<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-violet-600 shrink-0" />
+										</button>
+									)}
 
 									<button
 										type="button"

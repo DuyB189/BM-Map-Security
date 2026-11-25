@@ -166,6 +166,27 @@ const getEventMeta = (eventType: SystemAuditLog["eventType"]) => {
 				iconBg: "bg-purple-50 text-purple-600",
 				icon: <KeyRound className="w-4 h-4" />,
 			};
+		case "USER_CREATED":
+			return {
+				label: "Tạo tài khoản mới",
+				badgeClass: "bg-violet-50 text-violet-700 border-violet-200",
+				iconBg: "bg-violet-50 text-violet-600",
+				icon: <PlusCircle className="w-4 h-4" />,
+			};
+		case "USER_UPDATED":
+			return {
+				label: "Cập nhật tài khoản",
+				badgeClass: "bg-indigo-50 text-indigo-700 border-indigo-200",
+				iconBg: "bg-indigo-50 text-indigo-600",
+				icon: <User className="w-4 h-4" />,
+			};
+		case "USER_DELETED":
+			return {
+				label: "Xóa tài khoản",
+				badgeClass: "bg-rose-50 text-rose-700 border-rose-200",
+				iconBg: "bg-rose-50 text-rose-600",
+				icon: <Trash2 className="w-4 h-4" />,
+			};
 		case "INIT_ACCOUNT":
 			return {
 				label: "Khởi tạo tài khoản",
@@ -202,7 +223,16 @@ export default function SystemHistoryModal({ show, onClose }: SystemHistoryModal
 	const [isLoading, setIsLoading] = useState(false);
 	const [filter, setFilter] = useState<LogFilterCategory>("all");
 	const [categoryFilter, setCategoryFilter] = useState<string>("all");
+	const [userFilter, setUserFilter] = useState<string>("all");
 	const [searchQuery, setSearchQuery] = useState("");
+
+	const uniqueUsers = useMemo(() => {
+		const s = new Set<string>();
+		logs.forEach((l) => {
+			if (l.username && l.username.trim()) s.add(l.username.trim());
+		});
+		return Array.from(s).sort((a, b) => a.localeCompare(b, "vi"));
+	}, [logs]);
 
 	const loadLogs = async () => {
 		setIsLoading(true);
@@ -268,7 +298,10 @@ export default function SystemHistoryModal({ show, onClose }: SystemHistoryModal
 				log.eventType !== "INIT_ACCOUNT" &&
 				log.eventType !== "UNLOCK_SUCCESS" &&
 				log.eventType !== "PASSWORD_CHANGED" &&
-				log.eventType !== "RECOVERY_KEY_ROTATED"
+				log.eventType !== "RECOVERY_KEY_ROTATED" &&
+				log.eventType !== "USER_CREATED" &&
+				log.eventType !== "USER_UPDATED" &&
+				log.eventType !== "USER_DELETED"
 			) {
 				return false;
 			}
@@ -293,6 +326,10 @@ export default function SystemHistoryModal({ show, onClose }: SystemHistoryModal
 				return false;
 			}
 
+			if (userFilter !== "all" && log.username !== userFilter) {
+				return false;
+			}
+
 			if (searchQuery.trim()) {
 				const q = searchQuery.toLowerCase();
 				const meta = getEventMeta(log.eventType);
@@ -308,7 +345,7 @@ export default function SystemHistoryModal({ show, onClose }: SystemHistoryModal
 			}
 			return true;
 		});
-	}, [logs, filter, categoryFilter, searchQuery]);
+	}, [logs, filter, categoryFilter, userFilter, searchQuery]);
 
 	return (
 		<AnimatePresence>
@@ -418,7 +455,19 @@ export default function SystemHistoryModal({ show, onClose }: SystemHistoryModal
 								))}
 							</div>
 
-							<div className="flex items-center gap-2.5">
+							<div className="flex items-center gap-2.5 flex-wrap">
+								<select
+									value={userFilter}
+									onChange={(e) => setUserFilter(e.target.value)}
+									className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-sky-500 cursor-pointer">
+									<option value="all">Mọi tài khoản ({uniqueUsers.length})</option>
+									{uniqueUsers.map((u) => (
+										<option key={u} value={u}>
+											Tài khoản: {u}
+										</option>
+									))}
+								</select>
+
 								<select
 									value={categoryFilter}
 									onChange={(e) => setCategoryFilter(e.target.value)}
