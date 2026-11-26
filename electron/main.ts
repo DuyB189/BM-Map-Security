@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol, safeStorage } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, protocol, safeStorage, nativeImage } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -48,7 +48,17 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 
 let win: BrowserWindow | null;
 
-// Windows 10/11: Đặt AppUserModelId để thanh tác vụ (Taskbar) & biểu tượng hiển thị chuẩn
+// Đặt tên hiển thị chuẩn cho toàn bộ hộp thoại thông báo & thanh tác vụ (không hiển thị tên "Electron")
+app.setName("Bản đồ An ninh Trật tự");
+
+const getAppIconImage = () => {
+	const squareIconPath = path.join(process.env.VITE_PUBLIC || "", "app-icon.png");
+	const fallbackIconPath = path.join(process.env.VITE_PUBLIC || "", "logo.png");
+	const chosen = fs.existsSync(squareIconPath) ? squareIconPath : fallbackIconPath;
+	return fs.existsSync(chosen) ? nativeImage.createFromPath(chosen) : undefined;
+};
+
+// Windows 10/11: Đặt AppUserModelId để thanh tác vụ (Taskbar) & biểu tượng thông báo hiển thị chuẩn
 if (process.platform === "win32") {
 	app.setAppUserModelId("com.gis.anninh");
 }
@@ -67,13 +77,19 @@ if (!gotSingleInstanceLock) {
 }
 
 async function createWindow() {
+	const appIcon = getAppIconImage();
+	if (process.platform === "darwin" && appIcon && !appIcon.isEmpty()) {
+		app.dock?.setIcon(appIcon);
+	}
+
 	win = new BrowserWindow({
 		width: 1280,
 		height: 800,
 		minWidth: 1024,
 		minHeight: 680,
 		autoHideMenuBar: true,
-		icon: path.join(process.env.VITE_PUBLIC, "logo.png"),
+		title: "Bản đồ An ninh Trật tự",
+		icon: appIcon,
 		webPreferences: {
 			preload: path.join(
 				__dirname,
