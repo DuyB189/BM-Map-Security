@@ -238,8 +238,8 @@ export default function VuViecDetails({ details, onClose, vuviecList, doituongLi
                 <div className="flex items-center gap-1.5 mt-1.5 bg-slate-100 px-3.5 py-2.5 rounded-xl border border-slate-200/60 max-w-fit font-mono text-xs font-bold text-rose-600 shadow-inner">
                   <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 animate-bounce" />
                   <span>
-                    {(details.lng?.toFixed(6) || details.coordinates?.[0]?.[0]?.toFixed(6))},
-                    {(details.lat?.toFixed(6) || details.coordinates?.[0]?.[1]?.toFixed(6))}
+                    {Number.isFinite(Number(details.lng ?? details.coordinates?.[0]?.[0])) ? Number(details.lng ?? details.coordinates?.[0]?.[0]).toFixed(6) : "—"},
+                    {Number.isFinite(Number(details.lat ?? details.coordinates?.[0]?.[1])) ? Number(details.lat ?? details.coordinates?.[0]?.[1]).toFixed(6) : "—"}
                   </span>
                 </div>
               </div>

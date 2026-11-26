@@ -54,8 +54,8 @@ export default function XaDetails({ details, onClose }: Props) {
            <div className="flex flex-col">
               <span className="text-[10px] uppercase font-bold text-sky-600 tracking-wider">Tọa độ Bản đồ</span>
               <span className="text-sm font-mono font-bold text-slate-700">
-                {details.lng?.toFixed(6) || details.coordinates?.[0]?.[0]?.toFixed(6)}, 
-                {details.lat?.toFixed(6) || details.coordinates?.[0]?.[1]?.toFixed(6)}
+                {Number.isFinite(Number(details.lng ?? details.coordinates?.[0]?.[0])) ? Number(details.lng ?? details.coordinates?.[0]?.[0]).toFixed(6) : "—"},{" "}
+                {Number.isFinite(Number(details.lat ?? details.coordinates?.[0]?.[1])) ? Number(details.lat ?? details.coordinates?.[0]?.[1]).toFixed(6) : "—"}
               </span>
            </div>
         </div>

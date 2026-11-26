@@ -141,11 +141,14 @@ const describeEntityChanges = (oldItem: any, newItem: any): string => {
 	});
 
 	if (
-		typeof oldItem.lng === "number" &&
-		typeof newItem.lng === "number" &&
-		(Math.abs(oldItem.lng - newItem.lng) > 1e-6 || Math.abs(oldItem.lat - newItem.lat) > 1e-6)
+		Number.isFinite(Number(oldItem.lng)) &&
+		Number.isFinite(Number(newItem.lng)) &&
+		Number.isFinite(Number(oldItem.lat)) &&
+		Number.isFinite(Number(newItem.lat)) &&
+		(Math.abs(Number(oldItem.lng) - Number(newItem.lng)) > 1e-6 ||
+			Math.abs(Number(oldItem.lat) - Number(newItem.lat)) > 1e-6)
 	) {
-		changes.push(`Dời tọa độ (${newItem.lng.toFixed(5)}, ${newItem.lat.toFixed(5)})`);
+		changes.push(`Dời tọa độ (${Number(newItem.lng).toFixed(5)}, ${Number(newItem.lat).toFixed(5)})`);
 	}
 
 	if (JSON.stringify(oldItem.coordinates || []) !== JSON.stringify(newItem.coordinates || [])) {
@@ -788,7 +791,8 @@ export default function App() {
 		setIsMapReady(false); // Reset map ready state on initialization
 		setShowBoundary(true);
 
-		map.current = new maplibregl.Map({
+		try {
+			map.current = new maplibregl.Map({
 			container: mapContainer.current,
 			style: {
 				version: 8,
@@ -963,6 +967,11 @@ export default function App() {
 				[106.85, 11.88], // Góc Đông Bắc (Toàn tỉnh Tây Ninh)
 			],
 		});
+		} catch (mapInitErr) {
+			console.warn("[MapLibre] Không thể khởi tạo đồ họa bản đồ (WebGL):", mapInitErr);
+			map.current = null;
+			return;
+		}
 
 		map.current.on("load", () => {
 			setIsMapReady(true);
@@ -1380,7 +1389,7 @@ export default function App() {
           
           <div class="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
             <span class="text-[10px] text-slate-400 font-medium">Tọa độ</span>
-            <span class="text-[10px] text-slate-500 font-mono bg-slate-50 px-1.5 py-0.5 rounded-md border border-slate-100">${originalLngLat[0].toFixed(5)}, ${originalLngLat[1].toFixed(5)}</span>
+            <span class="text-[10px] text-slate-500 font-mono bg-slate-50 px-1.5 py-0.5 rounded-md border border-slate-100">${Number.isFinite(Number(originalLngLat[0])) ? Number(originalLngLat[0]).toFixed(5) : "—"}, ${Number.isFinite(Number(originalLngLat[1])) ? Number(originalLngLat[1]).toFixed(5) : "—"}</span>
           </div>
         </div>
 
@@ -1600,7 +1609,10 @@ export default function App() {
 		// Group collected markers by coordinates to detect overlaps
 		const groups: Record<string, typeof collected> = {};
 		collected.forEach((item) => {
-			const key = `${item.lngLat[0].toFixed(6)},${item.lngLat[1].toFixed(6)}`;
+			const nLng = Number(item.lngLat[0]);
+			const nLat = Number(item.lngLat[1]);
+			if (!Number.isFinite(nLng) || !Number.isFinite(nLat)) return;
+			const key = `${nLng.toFixed(6)},${nLat.toFixed(6)}`;
 			if (!groups[key]) {
 				groups[key] = [];
 			}
@@ -1776,7 +1788,9 @@ export default function App() {
 		const coordSummary =
 			formData.category === "tuyenduong-list" && newItem.type === "line"
 				? `${newItem.coordinates?.length || 0} điểm tọa độ`
-				: `${newItem.lng.toFixed(5)}, ${newItem.lat.toFixed(5)}`;
+				: Number.isFinite(Number(newItem.lng)) && Number.isFinite(Number(newItem.lat))
+					? `${Number(newItem.lng).toFixed(5)}, ${Number(newItem.lat).toFixed(5)}`
+					: "Chưa có tọa độ";
 		authService.logAction({
 			eventType: "DATA_CREATED",
 			status: "success",
@@ -1841,11 +1855,19 @@ export default function App() {
 				(d) => String(d.id || d.hoten) !== targetIdStr,
 			);
 		} else if (category === "coquan-list") {
-			deletedItem = newData.coquan.find((c) => String(c.ten) === targetIdStr);
-			newData.coquan = newData.coquan.filter((c) => String(c.ten) !== targetIdStr);
+			deletedItem = newData.coquan.find(
+				(c) => String(c.id || c.ten) === targetIdStr || String(c.ten) === targetIdStr,
+			);
+			newData.coquan = newData.coquan.filter(
+				(c) => String(c.id || c.ten) !== targetIdStr && String(c.ten) !== targetIdStr,
+			);
 		} else if (category === "cskd-list") {
-			deletedItem = newData.cskd.find((c) => String(c.ten) === targetIdStr);
-			newData.cskd = newData.cskd.filter((c) => String(c.ten) !== targetIdStr);
+			deletedItem = newData.cskd.find(
+				(c) => String(c.id || c.ten) === targetIdStr || String(c.ten) === targetIdStr,
+			);
+			newData.cskd = newData.cskd.filter(
+				(c) => String(c.id || c.ten) !== targetIdStr && String(c.ten) !== targetIdStr,
+			);
 		} else if (category === "diemnong-list") {
 			deletedItem = newData.diemnong.find((d) => String(d.id || d.ten) === targetIdStr);
 			newData.diemnong = newData.diemnong.filter(
@@ -1885,9 +1907,13 @@ export default function App() {
 		} else if (category === "doituong-list") {
 			newData.doituong = newData.doituong.filter((d) => !idSet.has(String(d.id || d.hoten)));
 		} else if (category === "coquan-list") {
-			newData.coquan = newData.coquan.filter((c) => !idSet.has(String(c.ten)));
+			newData.coquan = newData.coquan.filter(
+				(c) => !idSet.has(String(c.id || c.ten)) && !idSet.has(String(c.ten)),
+			);
 		} else if (category === "cskd-list") {
-			newData.cskd = newData.cskd.filter((c) => !idSet.has(String(c.ten)));
+			newData.cskd = newData.cskd.filter(
+				(c) => !idSet.has(String(c.id || c.ten)) && !idSet.has(String(c.ten)),
+			);
 		} else if (category === "diemnong-list") {
 			newData.diemnong = newData.diemnong.filter((d) => !idSet.has(String(d.id || d.ten)));
 		} else if (category === "tuyenduong-list") {
@@ -2507,7 +2533,7 @@ export default function App() {
 	const activeMenuObj = data.menu.find((m) => m.id === activeMenu);
 	const activeListData = activeMenuObj ? getFilteredData(activeMenuObj.target) : [];
 	const filteredActiveList = activeListData.filter((item) =>
-		item.label.toLowerCase().includes(searchQuery.toLowerCase()),
+		String(item.label ?? "").toLowerCase().includes(String(searchQuery ?? "").toLowerCase()),
 	);
 
 	const panToHomeCenter = () => {

@@ -34,6 +34,44 @@ export default function AddFormModal({
 }: AddFormModalProps) {
   const isRouteMode = formData.category === 'tuyenduong-list';
 
+  const handleCloseModal = () => {
+    setFormData({
+      title: '',
+      category: 'vuviec-list',
+      description: '',
+      loai: '',
+      mucdo: 'Trung bình',
+      radius: 300,
+      xaphuong: 'Phường Bình Minh',
+      diachi: '',
+      thoigian: '',
+      trangthai: 'Mới',
+      ketqua: '',
+      groupId: '',
+      cccd: '',
+      sdt: '',
+      chu_camera: '',
+      sdt_chu: '',
+      mst: '',
+      loai_hinh_kd: 'Hộ kinh doanh cá thể',
+      giay_phep: '',
+      chu_co_so: '',
+      chu_ngaysinh: '',
+      chu_cccd: '',
+      chu_sdt: '',
+      chu_diachi: '',
+      quan_ly: '',
+      quan_ly_ngaysinh: '',
+      quan_ly_cccd: '',
+      quan_ly_sdt: '',
+      quan_ly_diachi: '',
+      suspectIds: [],
+    });
+    if (setRouteCoordinates) setRouteCoordinates([]);
+    if (setSelectedCoords) setSelectedCoords(null);
+    setShowForm(false);
+  };
+
   return (
     <AnimatePresence>
       {showForm && (
@@ -60,7 +98,7 @@ export default function AddFormModal({
                   {isRouteMode ? 'Nhấp trên bản đồ để thêm các điểm' : 'Thêm dữ liệu GIS vào bản đồ'}
                 </p>
               </div>
-              <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 p-2"><X className="w-5 h-5" /></button>
+              <button onClick={handleCloseModal} title="Đóng hộp thoại" className="text-slate-400 hover:text-slate-600 p-2 cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
               <div className={isRouteMode ? "space-y-5 mb-5 flex flex-col" : "grid grid-cols-1 md:grid-cols-2 gap-5 mb-5"}>

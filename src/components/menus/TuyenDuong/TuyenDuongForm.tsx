@@ -118,7 +118,10 @@ export default function TuyenDuongForm({
                   }`}>
                     {idx + 1}
                   </span>
-                  <span className="font-semibold">{coord[0].toFixed(6)}, {coord[1].toFixed(6)}</span>
+                  <span className="font-semibold">
+                    {Number.isFinite(Number(coord?.[0])) ? Number(coord[0]).toFixed(6) : "—"},{" "}
+                    {Number.isFinite(Number(coord?.[1])) ? Number(coord[1]).toFixed(6) : "—"}
+                  </span>
                 </div>
                 <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 bg-white/80 border border-slate-100">
                   {idx === 0 ? 'Bắt đầu' : idx === routeCoordinates.length - 1 ? 'Kết thúc' : 'Điểm nút'}

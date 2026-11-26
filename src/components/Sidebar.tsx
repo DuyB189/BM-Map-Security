@@ -113,10 +113,10 @@ export default function Sidebar({
 			const items = getFilteredData(menu.target);
 			for (const item of items) {
 				const ok =
-					item.label?.toLowerCase().includes(q) ||
-					(item.loai && String(item.loai).toLowerCase().includes(q)) ||
-					(item.extra && String(item.extra).toLowerCase().includes(q)) ||
-					(item.groupId && String(item.groupId).toLowerCase().includes(q));
+					String(item.label ?? "").toLowerCase().includes(q) ||
+					(item.loai != null && String(item.loai).toLowerCase().includes(q)) ||
+					(item.extra != null && String(item.extra).toLowerCase().includes(q)) ||
+					(item.groupId != null && String(item.groupId).toLowerCase().includes(q));
 				if (ok) {
 					if (!firstMenuId) firstMenuId = menu.id;
 					matches.push({ ...item, _menuId: menu.id, _menuTitle: menu.title });

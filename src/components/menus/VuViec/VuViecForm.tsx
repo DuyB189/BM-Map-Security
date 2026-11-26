@@ -29,8 +29,9 @@ export default function VuViecForm({ formData, setFormData, doituongList, onAddN
 
   const filteredDoiTuong = doituongList.filter(dt => {
     if (formData.suspectIds && formData.suspectIds.includes(dt.id)) return false;
-    const nameMatch = (dt.hoten || '').toLowerCase().includes(searchText.toLowerCase());
-    const cccdMatch = (dt.cccd || '').toLowerCase().includes(searchText.toLowerCase());
+    const q = String(searchText ?? "").toLowerCase();
+    const nameMatch = String(dt.hoten ?? "").toLowerCase().includes(q);
+    const cccdMatch = String(dt.cccd ?? "").toLowerCase().includes(q);
     return nameMatch || cccdMatch;
   });
 

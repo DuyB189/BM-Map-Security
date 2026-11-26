@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Check, Search, Plus, UserPlus, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getLocalDateStr } from '../../../utils/dateUtils';
@@ -32,6 +32,20 @@ export default function EditIncidentModal({
   const [newMota, setNewMota] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  useEffect(() => {
+    if (!editData) {
+      setSearchText('');
+      setShowAddQuick(false);
+      setNewHoten('');
+      setNewCccd('');
+      setNewSdt('');
+      setNewDiachi('');
+      setNewLoai('Trộm cắp tài sản');
+      setNewMota('');
+      setErrorMsg('');
+    }
+  }, [editData]);
+
   if (!editData) return null;
 
   const selectedSuspects = (editData.suspectIds || []).map((id: any) =>
@@ -40,8 +54,9 @@ export default function EditIncidentModal({
 
   const filteredDoiTuong = doituongList.filter(dt => {
     if (editData.suspectIds && editData.suspectIds.includes(dt.id)) return false;
-    const nameMatch = (dt.hoten || '').toLowerCase().includes(searchText.toLowerCase());
-    const cccdMatch = (dt.cccd || '').toLowerCase().includes(searchText.toLowerCase());
+    const q = String(searchText ?? "").toLowerCase();
+    const nameMatch = String(dt.hoten ?? "").toLowerCase().includes(q);
+    const cccdMatch = String(dt.cccd ?? "").toLowerCase().includes(q);
     return nameMatch || cccdMatch;
   });
 

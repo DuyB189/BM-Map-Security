@@ -1,7 +1,9 @@
 {
   "name": "gis-an-ninh-trat-tu",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Phần mềm Bản đồ An ninh Trật tự Phường Bình Minh (100% Offline)",
+  "author": "Công an Phường Bình Minh - Tây Ninh",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -10,7 +12,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "build:electron": "vite build && electron-builder"
+    "build:electron": "vite build && electron-builder",
+    "build:win": "vite build && electron-builder --win",
+    "build:mac": "vite build && electron-builder --mac"
   },
   "build": {
     "appId": "com.gis.anninh",
@@ -36,8 +40,32 @@
     },
     "win": {
       "target": [
-        "nsis"
-      ]
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/logo.png",
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "BanDo_ANTT_BinhMinh_Setup_v${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Bản đồ An ninh Trật tự",
+      "runAfterFinish": true,
+      "unicode": true,
+      "installerLanguages": [
+        "vi_VN",
+        "en_US"
+      ],
+      "language": "1066"
     }
   },
   "dependencies": {

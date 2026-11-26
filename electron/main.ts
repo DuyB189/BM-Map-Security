@@ -48,10 +48,31 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 
 let win: BrowserWindow | null;
 
+// Windows 10/11: Đặt AppUserModelId để thanh tác vụ (Taskbar) & biểu tượng hiển thị chuẩn
+if (process.platform === "win32") {
+	app.setAppUserModelId("com.gis.anninh");
+}
+
+// Đảm bảo chỉ chạy duy nhất 1 cửa sổ ứng dụng trên máy trạm (tránh xung đột khóa SQLite khi mở trùng)
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+	app.quit();
+} else {
+	app.on("second-instance", () => {
+		if (win) {
+			if (win.isMinimized()) win.restore();
+			win.focus();
+		}
+	});
+}
+
 async function createWindow() {
 	win = new BrowserWindow({
 		width: 1280,
 		height: 800,
+		minWidth: 1024,
+		minHeight: 680,
+		autoHideMenuBar: true,
 		icon: path.join(process.env.VITE_PUBLIC, "logo.png"),
 		webPreferences: {
 			preload: path.join(
@@ -518,8 +539,8 @@ const verifySecret = (secret: string, saltHex: string, expectedHashHex: string):
 	}
 };
 
-const normalizeRecoveryKey = (rawKey: string): string => {
-	return (rawKey || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+const normalizeRecoveryKey = (rawKey: unknown): string => {
+	return String(rawKey ?? "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 };
 
 const encryptPasswordEscrow = (rawPassword: string): string => {
@@ -835,8 +856,8 @@ ipcMain.handle("auth:login", (_event, payload: { username: string; password: str
 		};
 	}
 
-	const attemptedUser = (payload?.username || "").trim();
-	const rawPass = payload?.password || "";
+	const attemptedUser = String(payload?.username ?? "").trim();
+	const rawPass = typeof payload?.password === "string" ? payload.password : String(payload?.password ?? "");
 	const account = vault.account;
 	const subUsers = vault.users || [];
 
@@ -1422,9 +1443,9 @@ ipcMain.handle(
 			};
 		}
 
-		const cleanUser = (payload?.username || "").trim();
-		const cleanFullName = (payload?.fullName || "").trim() || cleanUser;
-		const rawPass = payload?.password || "";
+		const cleanUser = String(payload?.username ?? "").trim();
+		const cleanFullName = String(payload?.fullName ?? "").trim() || cleanUser;
+		const rawPass = typeof payload?.password === "string" ? payload.password : String(payload?.password ?? "");
 		const role: "admin" | "staff" = payload?.role === "admin" ? "admin" : "staff";
 
 		if (cleanUser.length < 3 || cleanUser.length > 32) {
@@ -2439,6 +2460,11 @@ ipcMain.handle(
 app.on("before-quit", () => {
 	try {
 		if (gisSqliteDb) {
+			try {
+				gisSqliteDb.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+			} catch {
+				// Ignore checkpoint error if db is read-only or already closed
+			}
 			gisSqliteDb.close();
 			gisSqliteDb = null;
 		}
@@ -2452,6 +2478,7 @@ app.on("before-quit", () => {
 });
 
 app.whenReady().then(() => {
+	if (!gotSingleInstanceLock) return;
 	ensureGisDbOpen();
 	setupMbtilesFile();
 	registerMbtilesProtocol();

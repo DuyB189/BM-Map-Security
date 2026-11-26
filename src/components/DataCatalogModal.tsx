@@ -223,7 +223,7 @@ function formatCoordPair(lat: any, lng: any, decimals = 5): string {
 
 function renderStatusBadge(value: string) {
 	if (!value) return <span className="text-slate-300 text-xs">—</span>;
-	const v = value.toLowerCase();
+	const v = String(value ?? "").toLowerCase();
 	let cls = "bg-slate-100 text-slate-600 border-slate-200";
 	if (
 		v.includes("rất cao") ||

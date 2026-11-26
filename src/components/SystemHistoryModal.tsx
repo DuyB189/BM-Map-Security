@@ -331,15 +331,15 @@ export default function SystemHistoryModal({ show, onClose }: SystemHistoryModal
 			}
 
 			if (searchQuery.trim()) {
-				const q = searchQuery.toLowerCase();
+				const q = String(searchQuery ?? "").toLowerCase();
 				const meta = getEventMeta(log.eventType);
 				const catName = log.category ? getCategoryDisplayName(log.category) : "";
 				return (
-					log.message.toLowerCase().includes(q) ||
-					log.username.toLowerCase().includes(q) ||
-					meta.label.toLowerCase().includes(q) ||
-					catName.toLowerCase().includes(q) ||
-					(log.targetName || "").toLowerCase().includes(q) ||
+					String(log.message ?? "").toLowerCase().includes(q) ||
+					String(log.username ?? "").toLowerCase().includes(q) ||
+					String(meta.label ?? "").toLowerCase().includes(q) ||
+					String(catName ?? "").toLowerCase().includes(q) ||
+					String(log.targetName ?? "").toLowerCase().includes(q) ||
 					formatFullTimestamp(log.timestamp).toLowerCase().includes(q)
 				);
 			}

@@ -149,11 +149,17 @@ export default function TuyenDuongDetails({ details, onClose }: Props) {
                 <div className="space-y-2 border-t border-slate-200/60 pt-3 text-[10px] font-mono leading-relaxed">
                   <div className="flex items-center justify-between text-emerald-800 bg-emerald-50/40 p-2 rounded-lg border border-emerald-100/50">
                     <span className="font-bold uppercase text-[8px] tracking-wider bg-emerald-500 text-white px-1.5 py-0.5 rounded shrink-0">Điểm đầu</span>
-                    <span className="font-bold">{details.coordinates[0][0].toFixed(6)}, {details.coordinates[0][1].toFixed(6)}</span>
+                    <span className="font-bold">
+                      {Number.isFinite(Number(details.coordinates[0]?.[0])) ? Number(details.coordinates[0][0]).toFixed(6) : "—"},{" "}
+                      {Number.isFinite(Number(details.coordinates[0]?.[1])) ? Number(details.coordinates[0][1]).toFixed(6) : "—"}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sky-850 bg-sky-50/40 p-2 rounded-lg border border-sky-100/50">
                     <span className="font-bold uppercase text-[8px] tracking-wider bg-sky-500 text-white px-1.5 py-0.5 rounded shrink-0">Điểm cuối</span>
-                    <span className="font-bold">{details.coordinates[details.coordinates.length - 1][0].toFixed(6)}, {details.coordinates[details.coordinates.length - 1][1].toFixed(6)}</span>
+                    <span className="font-bold">
+                      {Number.isFinite(Number(details.coordinates[details.coordinates.length - 1]?.[0])) ? Number(details.coordinates[details.coordinates.length - 1][0]).toFixed(6) : "—"},{" "}
+                      {Number.isFinite(Number(details.coordinates[details.coordinates.length - 1]?.[1])) ? Number(details.coordinates[details.coordinates.length - 1][1]).toFixed(6) : "—"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -169,8 +175,8 @@ export default function TuyenDuongDetails({ details, onClose }: Props) {
                   <div className="flex items-center gap-1.5 mt-1.5 bg-slate-100 px-3.5 py-2.5 rounded-xl border border-slate-200/60 max-w-fit font-mono text-xs font-bold text-rose-600 shadow-inner">
                     <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 animate-bounce" />
                     <span>
-                      {(details.lng?.toFixed(6) || details.coordinates?.[0]?.[0]?.toFixed(6))},
-                      {(details.lat?.toFixed(6) || details.coordinates?.[0]?.[1]?.toFixed(6))}
+                      {Number.isFinite(Number(details.lng ?? details.coordinates?.[0]?.[0])) ? Number(details.lng ?? details.coordinates?.[0]?.[0]).toFixed(6) : "—"},{" "}
+                      {Number.isFinite(Number(details.lat ?? details.coordinates?.[0]?.[1])) ? Number(details.lat ?? details.coordinates?.[0]?.[1]).toFixed(6) : "—"}
                     </span>
                   </div>
                 </div>

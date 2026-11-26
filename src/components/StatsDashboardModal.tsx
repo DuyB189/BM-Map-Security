@@ -1383,11 +1383,11 @@ export default function StatsDashboardModal({ show, onClose, data, onSelectItem 
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/20 space-y-3 text-left">
               {activeListModal.items
                 .filter(item => {
-                  const q = listSearch.trim().toLowerCase();
+                  const q = String(listSearch ?? "").trim().toLowerCase();
                   if (!q) return true;
-                  const name = getItemName(item, activeListModal.category).toLowerCase();
-                  const desc = (item.mota || item.description || '').toLowerCase();
-                  const extra = (item.loai || item.groupId || '').toLowerCase();
+                  const name = String(getItemName(item, activeListModal.category) ?? "").toLowerCase();
+                  const desc = String(item.mota ?? item.description ?? "").toLowerCase();
+                  const extra = String(item.loai ?? item.groupId ?? "").toLowerCase();
                   return name.includes(q) || desc.includes(q) || extra.includes(q);
                 })
                 .map((item, idx) => {
