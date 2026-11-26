@@ -832,18 +832,36 @@ export default function App() {
 						id: "osm-region",
 						type: "raster",
 						source: "osm-region",
+						paint: {
+							"raster-resampling": "linear",
+							"raster-contrast": 0.1,
+							"raster-saturation": 0.08,
+							"raster-fade-duration": 120,
+						},
 					},
 					{
 						id: "osm-province",
 						type: "raster",
 						source: "osm-province",
-						minzoom: 14,
+						minzoom: 13.15,
+						paint: {
+							"raster-resampling": "linear",
+							"raster-contrast": 0.1,
+							"raster-saturation": 0.08,
+							"raster-fade-duration": 120,
+						},
 					},
 					{
 						id: "osm-ward-hd",
 						type: "raster",
 						source: "osm-ward-hd",
-						minzoom: 17,
+						minzoom: 16.15,
+						paint: {
+							"raster-resampling": "linear",
+							"raster-contrast": 0.12,
+							"raster-saturation": 0.08,
+							"raster-fade-duration": 120,
+						},
 					},
 					{
 						id: "binhminh-outside-mask",
@@ -961,7 +979,8 @@ export default function App() {
 			center: [106.136138, 11.3814401], // Tọa độ trung tâm địa giới Phường Bình Minh
 			zoom: 12.2,
 			minZoom: 8.5,
-			maxZoom: 18,
+			maxZoom: 17.5,
+			pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
 			maxBounds: [
 				[105.45, 10.35], // Góc Tây Nam (Mở rộng toàn tỉnh Tây Ninh & vùng phụ cận)
 				[106.85, 11.88], // Góc Đông Bắc (Toàn tỉnh Tây Ninh)
