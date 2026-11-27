@@ -208,9 +208,9 @@ export default function EditIncidentModal({
                 {selectedSuspects.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2 pl-1">
                     {selectedSuspects.map((dt: any) => (
-                      <span key={dt.id} className="inline-flex items-center gap-1.5 bg-purple-555/10 text-purple-700 border border-purple-200/50 py-1.5 px-3 rounded-xl text-xs font-bold shadow-sm">
+                      <span key={dt.id} className="inline-flex items-center gap-1.5 bg-cyan-600/10 text-cyan-700 border border-cyan-200/50 py-1.5 px-3 rounded-xl text-xs font-bold shadow-sm">
                         <span>{dt.hoten} ({dt.loai})</span>
-                        <button type="button" onClick={() => handleRemoveSuspect(dt.id)} className="text-purple-400 hover:text-purple-650 cursor-pointer font-bold shrink-0">×</button>
+                        <button type="button" onClick={() => handleRemoveSuspect(dt.id)} className="text-cyan-400 hover:text-cyan-600 cursor-pointer font-bold shrink-0">×</button>
                       </span>
                     ))}
                   </div>
@@ -224,7 +224,7 @@ export default function EditIncidentModal({
                   <input
                     type="text"
                     placeholder="Tìm kiếm đối tượng theo tên hoặc CCCD..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 pl-9 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 pl-9 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all"
                     value={searchText}
                     onChange={(e) => setSearchText(e.target.value)}
                   />
@@ -242,7 +242,7 @@ export default function EditIncidentModal({
                               <div className="text-sm font-bold text-slate-700">{dt.hoten}</div>
                               <div className="text-[10px] text-slate-400 font-semibold uppercase">{dt.loai} {dt.cccd ? `| CCCD: ${dt.cccd}` : ''}</div>
                             </div>
-                            <Plus className="w-4 h-4 text-purple-600 shrink-0" />
+                            <Plus className="w-4 h-4 text-cyan-600 shrink-0" />
                           </div>
                         ))
                       ) : (
@@ -260,7 +260,7 @@ export default function EditIncidentModal({
                       setShowAddQuick(!showAddQuick);
                       setErrorMsg('');
                     }}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-600 hover:text-cyan-700 transition-colors cursor-pointer"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
                     {showAddQuick ? 'Đóng form thêm nhanh' : 'Thêm nhanh đối tượng tình nghi mới'}
@@ -269,8 +269,8 @@ export default function EditIncidentModal({
 
                 {/* Quick add suspect sub-form */}
                 {showAddQuick && (
-                  <div className="bg-purple-50/30 border border-purple-100/50 p-4 rounded-2xl space-y-3 mt-2 animate-none">
-                    <h5 className="text-[10px] font-bold text-purple-700 uppercase tracking-widest pl-1">Tạo đối tượng tình nghi mới</h5>
+                  <div className="bg-cyan-50/30 border border-cyan-100/50 p-4 rounded-2xl space-y-3 mt-2 animate-none">
+                    <h5 className="text-[10px] font-bold text-cyan-700 uppercase tracking-widest pl-1">Tạo đối tượng tình nghi mới</h5>
 
                     {errorMsg && (
                       <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-xl flex items-start gap-2 text-rose-700 text-xs font-semibold">
@@ -356,7 +356,7 @@ export default function EditIncidentModal({
                     <button
                       type="button"
                       onClick={handleCreateQuickSuspect}
-                      className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shadow-purple-100"
+                      className="w-full py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shadow-cyan-100"
                     >
                       Thêm & Chọn đối tượng này
                     </button>

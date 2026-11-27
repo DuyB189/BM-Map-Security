@@ -9,6 +9,7 @@ interface DetailsModalProps {
 	onClose: () => void;
 	vuviecList?: any[];
 	doituongList?: any[];
+	cameraList?: any[];
 }
 
 export default function DetailsModal({
@@ -16,6 +17,7 @@ export default function DetailsModal({
 	onClose,
 	vuviecList,
 	doituongList,
+	cameraList,
 }: DetailsModalProps) {
 	const hasAuditTrail = Boolean(
 		details?.nguoi_tao || details?.nguoi_cap_nhat || details?.ngay_tao || details?.ngay_cap_nhat,
@@ -37,6 +39,7 @@ export default function DetailsModal({
 							onClose={onClose}
 							vuviecList={vuviecList}
 							doituongList={doituongList}
+							cameraList={cameraList}
 						/>
 					</div>
 

@@ -16,15 +16,14 @@ export default function TuyenDuongForm({
 }: Props) {
 
   const handleUndo = () => {
-    if (setRouteCoordinates && routeCoordinates.length > 1) {
+    if (setRouteCoordinates && routeCoordinates.length > 0) {
       setRouteCoordinates(routeCoordinates.slice(0, -1));
     }
   };
 
   const handleClear = () => {
     if (setRouteCoordinates && routeCoordinates.length > 0) {
-      // Keep only the first point as initial starting point
-      setRouteCoordinates([routeCoordinates[0]]);
+      setRouteCoordinates([]);
     }
   };
 
@@ -71,7 +70,7 @@ export default function TuyenDuongForm({
           <button
             type="button"
             onClick={handleUndo}
-            disabled={routeCoordinates.length <= 1}
+            disabled={routeCoordinates.length === 0}
             className="flex-1 py-2 px-3 bg-white border border-slate-200 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 text-slate-700 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -81,7 +80,7 @@ export default function TuyenDuongForm({
           <button
             type="button"
             onClick={handleClear}
-            disabled={routeCoordinates.length <= 1}
+            disabled={routeCoordinates.length === 0}
             className="py-2 px-3 bg-rose-50 border border-rose-100 hover:bg-rose-100/50 disabled:opacity-50 disabled:cursor-not-allowed text-rose-600 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -96,39 +95,45 @@ export default function TuyenDuongForm({
             Tọa độ các nút ({routeCoordinates.length} điểm)
           </label>
           
-          <div className="max-h-36 overflow-y-auto pr-1 space-y-1.5 custom-scrollbar">
-            {routeCoordinates.map((coord, idx) => (
-              <div 
-                key={idx}
-                className={`p-2.5 rounded-lg border text-[10px] font-mono flex items-center justify-between shadow-sm transition-all ${
-                  idx === 0 
-                    ? 'bg-emerald-50/50 border-emerald-100 text-emerald-800' 
-                    : idx === routeCoordinates.length - 1 
-                      ? 'bg-sky-50/50 border-sky-100 text-sky-800' 
-                      : 'bg-white border-slate-100 text-slate-650'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shrink-0 ${
+          {routeCoordinates.length === 0 ? (
+            <div className="p-3 rounded-xl bg-white border border-dashed border-slate-200 text-center text-[11px] text-slate-400 font-medium">
+              Chưa chọn điểm nào. Nhấp chuột lên bản đồ để chọn điểm bắt đầu.
+            </div>
+          ) : (
+            <div className="max-h-36 overflow-y-auto pr-1 space-y-1.5 custom-scrollbar">
+              {routeCoordinates.map((coord, idx) => (
+                <div 
+                  key={idx}
+                  className={`p-2.5 rounded-lg border text-[10px] font-mono flex items-center justify-between shadow-sm transition-all ${
                     idx === 0 
-                      ? 'bg-emerald-500 text-white' 
+                      ? 'bg-emerald-50/50 border-emerald-100 text-emerald-800' 
                       : idx === routeCoordinates.length - 1 
-                        ? 'bg-sky-500 text-white' 
-                        : 'bg-slate-200 text-slate-600'
-                  }`}>
-                    {idx + 1}
-                  </span>
-                  <span className="font-semibold">
-                    {Number.isFinite(Number(coord?.[0])) ? Number(coord[0]).toFixed(6) : "—"},{" "}
-                    {Number.isFinite(Number(coord?.[1])) ? Number(coord[1]).toFixed(6) : "—"}
+                        ? 'bg-sky-50/50 border-sky-100 text-sky-800' 
+                        : 'bg-white border-slate-100 text-slate-650'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shrink-0 ${
+                      idx === 0 
+                        ? 'bg-emerald-500 text-white' 
+                        : idx === routeCoordinates.length - 1 
+                          ? 'bg-sky-500 text-white' 
+                          : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {idx + 1}
+                    </span>
+                    <span className="font-semibold">
+                      {Number.isFinite(Number(coord?.[0])) ? Number(coord[0]).toFixed(6) : "—"},{" "}
+                      {Number.isFinite(Number(coord?.[1])) ? Number(coord[1]).toFixed(6) : "—"}
+                    </span>
+                  </div>
+                  <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 bg-white/80 border border-slate-100">
+                    {idx === 0 ? 'Bắt đầu' : idx === routeCoordinates.length - 1 ? 'Kết thúc' : 'Điểm nút'}
                   </span>
                 </div>
-                <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 bg-white/80 border border-slate-100">
-                  {idx === 0 ? 'Bắt đầu' : idx === routeCoordinates.length - 1 ? 'Kết thúc' : 'Điểm nút'}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

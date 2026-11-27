@@ -50,11 +50,21 @@ export interface Camera {
   ngay_cap_nhat?: string;
 }
 
+export interface PersonActivityLog {
+  id: string;
+  ngay: string;
+  loai_su_kien: string;
+  noi_dung: string;
+}
+
 export interface Person {
   id?: string | number;
   hoten: string;
   cccd?: string;
   loai?: string;
+  nhom_nhan?: string[];
+  hinh_anh?: string;
+  lich_su_hoat_dong?: PersonActivityLog[];
   diachi?: string;
   mota?: string;
   sdt?: string;
@@ -80,6 +90,21 @@ export interface Agency {
   ngay_cap_nhat?: string;
 }
 
+export interface BusinessLicenseInfo {
+  so_giay_phep?: string;
+  ngay_cap?: string;
+  ngay_het_han?: string;
+  trang_thai?: string;
+}
+
+export interface BusinessInspectionRecord {
+  id: string;
+  ngay_kiem_tra: string;
+  don_vi_kiem_tra?: string;
+  ket_qua: string;
+  noi_dung?: string;
+}
+
 export interface Business {
   id?: string | number;
   ten: string;
@@ -88,6 +113,9 @@ export interface Business {
   mst?: string;
   loai_hinh_kd?: string;
   giay_phep?: string;
+  giay_phep_antt?: BusinessLicenseInfo;
+  giay_phep_pccc?: BusinessLicenseInfo;
+  lich_su_kiem_tra?: BusinessInspectionRecord[];
 
   // Người đại diện theo pháp luật / Chủ cơ sở
   chu_co_so?: string;

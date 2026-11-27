@@ -162,15 +162,15 @@ const getEventMeta = (eventType: SystemAuditLog["eventType"]) => {
 		case "RECOVERY_KEY_ROTATED":
 			return {
 				label: "Cấp mới Mã Chủ Quản",
-				badgeClass: "bg-purple-50 text-purple-700 border-purple-200",
-				iconBg: "bg-purple-50 text-purple-600",
+				badgeClass: "bg-cyan-50 text-cyan-700 border-cyan-200",
+				iconBg: "bg-cyan-50 text-cyan-600",
 				icon: <KeyRound className="w-4 h-4" />,
 			};
 		case "USER_CREATED":
 			return {
 				label: "Tạo tài khoản mới",
-				badgeClass: "bg-violet-50 text-violet-700 border-violet-200",
-				iconBg: "bg-violet-50 text-violet-600",
+				badgeClass: "bg-cyan-50 text-cyan-700 border-cyan-200",
+				iconBg: "bg-cyan-50 text-cyan-600",
 				icon: <PlusCircle className="w-4 h-4" />,
 			};
 		case "USER_UPDATED":

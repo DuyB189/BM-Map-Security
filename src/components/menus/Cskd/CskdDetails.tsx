@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, MapPin, Store, Tag, Edit2, Trash2, Compass, Briefcase, FileText, User, Phone, CreditCard, Calendar, ShieldCheck, Clipboard, Check } from 'lucide-react';
+import { X, MapPin, Store, Edit2, Compass, User, Phone, CreditCard, Calendar, ShieldCheck, Clipboard, Check, Flame, ClipboardCheck } from 'lucide-react';
+import { evaluateLicenseStatus } from '../../../utils/gisHelpers';
 
 interface Props {
   details: any;
@@ -122,12 +123,111 @@ export default function CskdDetails({ details, onClose }: Props) {
             )}
             {details.giay_phep && (
               <div className="flex flex-col gap-1 py-0.5 border-t border-slate-50 pt-2">
-                <span className="text-slate-400 font-medium">Giấy phép liên quan</span>
+                <span className="text-slate-400 font-medium">Giấy phép khác / Ghi chú pháp lý</span>
                 <span className="font-medium text-slate-650 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-150">{details.giay_phep}</span>
               </div>
             )}
           </div>
         </div>
+
+        {/* SECTION 1B: GIẤY PHÉP ANTT & PCCC */}
+        {(details.giay_phep_antt || details.giay_phep_pccc) && (() => {
+          const anttStatus = evaluateLicenseStatus(details.giay_phep_antt);
+          const pcccStatus = evaluateLicenseStatus(details.giay_phep_pccc);
+          const badgeClass = (tone: string) =>
+            tone === 'emerald'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : tone === 'amber'
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : tone === 'rose'
+                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                  : 'bg-slate-100 text-slate-600 border-slate-200';
+          return (
+            <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm space-y-3">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1.5 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-sky-600" />
+                Giấy phép ANTT & PCCC
+              </h4>
+              <div className="space-y-2.5 text-xs">
+                <div className="p-3 rounded-xl bg-sky-50/40 border border-sky-100 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-extrabold text-sky-800 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-sky-600" />
+                      Giấy phép ANTT
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${badgeClass(anttStatus.tone)}`}>
+                      {anttStatus.label}
+                    </span>
+                  </div>
+                  {details.giay_phep_antt?.so_giay_phep && (
+                    <div className="text-[11px] font-mono font-bold text-slate-700">Số: {details.giay_phep_antt.so_giay_phep}</div>
+                  )}
+                  {(details.giay_phep_antt?.ngay_cap || details.giay_phep_antt?.ngay_het_han) && (
+                    <div className="text-[10px] text-slate-500">
+                      {details.giay_phep_antt?.ngay_cap ? `Cấp: ${details.giay_phep_antt.ngay_cap}` : ''}
+                      {details.giay_phep_antt?.ngay_cap && details.giay_phep_antt?.ngay_het_han ? ' • ' : ''}
+                      {details.giay_phep_antt?.ngay_het_han ? `Hết hạn: ${details.giay_phep_antt.ngay_het_han}` : ''}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 rounded-xl bg-orange-50/40 border border-orange-100 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-extrabold text-orange-800 flex items-center gap-1">
+                      <Flame className="w-3.5 h-3.5 text-orange-600" />
+                      Giấy phép PCCC
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${badgeClass(pcccStatus.tone)}`}>
+                      {pcccStatus.label}
+                    </span>
+                  </div>
+                  {details.giay_phep_pccc?.so_giay_phep && (
+                    <div className="text-[11px] font-mono font-bold text-slate-700">Số: {details.giay_phep_pccc.so_giay_phep}</div>
+                  )}
+                  {(details.giay_phep_pccc?.ngay_cap || details.giay_phep_pccc?.ngay_het_han) && (
+                    <div className="text-[10px] text-slate-500">
+                      {details.giay_phep_pccc?.ngay_cap ? `Cấp: ${details.giay_phep_pccc.ngay_cap}` : ''}
+                      {details.giay_phep_pccc?.ngay_cap && details.giay_phep_pccc?.ngay_het_han ? ' • ' : ''}
+                      {details.giay_phep_pccc?.ngay_het_han ? `Hết hạn: ${details.giay_phep_pccc.ngay_het_han}` : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* SECTION 1C: LỊCH SỬ KIỂM TRA */}
+        {Array.isArray(details.lich_su_kiem_tra) && details.lich_su_kiem_tra.length > 0 && (
+          <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm space-y-3">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1.5 flex items-center gap-1.5">
+              <ClipboardCheck className="w-3.5 h-3.5 text-pink-600" />
+              Lịch sử kiểm tra ({details.lich_su_kiem_tra.length})
+            </h4>
+            <div className="space-y-2 max-h-52 overflow-y-auto pr-1 custom-scrollbar">
+              {details.lich_su_kiem_tra.map((rec: any, idx: number) => (
+                <div key={rec.id || idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-bold text-[10px] text-slate-500">{rec.ngay_kiem_tra}</span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${
+                      rec.ket_qua === 'Đạt'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : rec.ket_qua === 'Nhắc nhở'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                    }`}>
+                      {rec.ket_qua}
+                    </span>
+                  </div>
+                  {rec.don_vi_kiem_tra && (
+                    <div className="text-[10px] font-bold text-slate-500">Đơn vị: {rec.don_vi_kiem_tra}</div>
+                  )}
+                  {rec.noi_dung && <p className="text-xs text-slate-700 leading-relaxed">{rec.noi_dung}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* SECTION 2: LEGAL REPRESENTATIVE (OWNER) */}
         {details.chu_co_so && (

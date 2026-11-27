@@ -36,11 +36,19 @@ import {
 	Square,
 	Calendar,
 	Layers,
+	Tag,
+	History,
+	ShieldCheck,
+	ClipboardCheck,
+	Camera,
+	ZoomIn,
 } from "lucide-react";
 import { GISData } from "../types";
 import { formatDate } from "../utils/date";
 import { parseFlexibleLocalDate, getLocalDateStr } from "../utils/dateUtils";
 import { authService, getCategoryDisplayName } from "../utils/authService";
+import { evaluateLicenseStatus } from "../utils/gisHelpers";
+import { appConfirm } from "./AppConfirmModal";
 
 interface DataCatalogModalProps {
 	show: boolean;
@@ -55,6 +63,7 @@ interface DataCatalogModalProps {
 	onDeleteSingle: (id: string | number, category: string) => void;
 	onBulkDelete: (ids: (string | number)[], category: string) => void;
 	suspendOverlay?: boolean;
+	allowedCategories?: string[];
 }
 
 type CategoryTarget =
@@ -107,10 +116,10 @@ const CATEGORY_CONFIGS: CategoryMeta[] = [
 		title: "Hồ sơ Đối tượng quản lý",
 		shortTitle: "Đối tượng",
 		supportsImport: true,
-		accentText: "text-violet-600",
-		accentBg: "bg-violet-50",
-		accentBorder: "border-violet-200",
-		activePill: "bg-violet-600 text-white shadow-sm shadow-violet-200",
+		accentText: "text-cyan-600",
+		accentBg: "bg-cyan-50",
+		accentBorder: "border-cyan-200",
+		activePill: "bg-cyan-600 text-white shadow-sm shadow-cyan-200",
 	},
 	{
 		menuId: "menu-coquan",
@@ -269,42 +278,65 @@ export default function DataCatalogModal({
 	onDeleteSingle,
 	onBulkDelete,
 	suspendOverlay = false,
+	allowedCategories,
 }: DataCatalogModalProps) {
-	const [activeTarget, setActiveTarget] = useState<CategoryTarget>("vuviec-list");
+	const visibleCategoryConfigs = useMemo(() => {
+		if (Array.isArray(allowedCategories) && allowedCategories.length > 0) {
+			return CATEGORY_CONFIGS.filter((c) => allowedCategories.includes(c.target));
+		}
+		return CATEGORY_CONFIGS;
+	}, [allowedCategories]);
+
+	const [activeTarget, setActiveTarget] = useState<CategoryTarget>(
+		visibleCategoryConfigs[0]?.target || "vuviec-list",
+	);
 	const [viewMode, setViewMode] = useState<"table" | "grid">("table");
 	const [searchText, setSearchText] = useState("");
 	const [typeFilter, setTypeFilter] = useState("");
 	const [statusFilter, setStatusFilter] = useState("");
+	const [areaFilter, setAreaFilter] = useState("");
 	const [creatorFilter, setCreatorFilter] = useState("");
 	const [periodFilter, setPeriodFilter] = useState<"" | "today" | "month" | "quarter" | "year">(
 		"",
 	);
+	const [dateFrom, setDateFrom] = useState("");
+	const [dateTo, setDateTo] = useState("");
 	const [sortField, setSortField] = useState<"title" | "type" | "status" | "date">("date");
 	const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 	const [pageSize, setPageSize] = useState<number>(25);
 	const [currentPage, setCurrentPage] = useState<number>(1);
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 	const [inspectedItem, setInspectedItem] = useState<any | null>(null);
+	const [previewImageUrl, setPreviewImageUrl] = useState<{ src: string; caption: string } | null>(
+		null,
+	);
 
 	// Sync initial category when opened from left dock or stats modal
 	useEffect(() => {
 		if (!show) return;
 		if (initialMenuId) {
-			const matched = CATEGORY_CONFIGS.find(
+			const matched = visibleCategoryConfigs.find(
 				(c) => c.menuId === initialMenuId || c.target === initialMenuId,
 			);
 			if (matched) {
 				setActiveTarget(matched.target);
+				return;
 			}
 		}
-	}, [show, initialMenuId]);
+		if (!visibleCategoryConfigs.some((c) => c.target === activeTarget)) {
+			setActiveTarget(visibleCategoryConfigs[0]?.target || "vuviec-list");
+		}
+	}, [show, initialMenuId, visibleCategoryConfigs]);
 
 	// Reset filters, pagination & selection when switching category tab
 	useEffect(() => {
 		setTypeFilter("");
 		setStatusFilter("");
+		setAreaFilter("");
 		setCreatorFilter("");
 		setPeriodFilter("");
+		setDateFrom("");
+		setDateTo("");
 		setCurrentPage(1);
 		setSelectedIds(new Set());
 		setInspectedItem(null);
@@ -313,7 +345,17 @@ export default function DataCatalogModal({
 	// Reset page to 1 when search/filter changes
 	useEffect(() => {
 		setCurrentPage(1);
-	}, [searchText, typeFilter, statusFilter, creatorFilter, periodFilter, pageSize]);
+	}, [
+		searchText,
+		typeFilter,
+		statusFilter,
+		areaFilter,
+		creatorFilter,
+		periodFilter,
+		dateFrom,
+		dateTo,
+		pageSize,
+	]);
 
 	// Keyboard ESC handler
 	useEffect(() => {
@@ -332,8 +374,11 @@ export default function DataCatalogModal({
 	}, [show, suspendOverlay, inspectedItem, onClose]);
 
 	const activeConfig = useMemo(
-		() => CATEGORY_CONFIGS.find((c) => c.target === activeTarget) || CATEGORY_CONFIGS[0],
-		[activeTarget],
+		() =>
+			visibleCategoryConfigs.find((c) => c.target === activeTarget) ||
+			visibleCategoryConfigs[0] ||
+			CATEGORY_CONFIGS[0],
+		[activeTarget, visibleCategoryConfigs],
 	);
 
 	const getRawItemsForTarget = (target: CategoryTarget): any[] => {
@@ -388,6 +433,15 @@ export default function DataCatalogModal({
 		return Array.from(s).sort((a, b) => a.localeCompare(b, "vi"));
 	}, [rawItems, activeTarget]);
 
+	const uniqueAreas = useMemo(() => {
+		const s = new Set<string>();
+		rawItems.forEach((item) => {
+			const val = String(item.diachi || item.xaphuong || item.chu_diachi || "").trim();
+			if (val) s.add(val);
+		});
+		return Array.from(s).sort((a, b) => a.localeCompare(b, "vi"));
+	}, [rawItems]);
+
 	const uniqueCreators = useMemo(() => {
 		const s = new Set<string>();
 		rawItems.forEach((item) => {
@@ -398,6 +452,22 @@ export default function DataCatalogModal({
 		return Array.from(s).sort((a, b) => a.localeCompare(b, "vi"));
 	}, [rawItems]);
 
+	// Map suspect ID -> related incidents searchable text for cross-search (1.2.c)
+	const suspectIncidentIndex = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const vv of data.vuviec) {
+			if (!Array.isArray(vv.suspectIds)) continue;
+			const snippet = [vv.loai, vv.groupId, vv.diachi, vv.mota, vv.trangthai]
+				.filter(Boolean)
+				.join(" ");
+			for (const sid of vv.suspectIds) {
+				const key = String(sid);
+				map.set(key, `${map.get(key) || ""} ${snippet}`);
+			}
+		}
+		return map;
+	}, [data.vuviec]);
+
 	// Filtered + Sorted items (handles 1,000+ rows cleanly via useMemo)
 	const processedItems = useMemo(() => {
 		const q = searchText.trim().toLowerCase();
@@ -406,18 +476,29 @@ export default function DataCatalogModal({
 		const curM = now.getMonth() + 1;
 		const curD = now.getDate();
 		const curQ = Math.floor(now.getMonth() / 3) + 1;
+		const fromTime = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+		const toTime = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
 
 		const filtered = rawItems.filter((item) => {
 			if (typeFilter) {
-				if (String(item.loai || "").trim() !== typeFilter) return false;
+				const matchesPrimary = String(item.loai || "").trim() === typeFilter;
+				const matchesTag =
+					Array.isArray(item.nhom_nhan) && item.nhom_nhan.includes(typeFilter);
+				if (!matchesPrimary && !matchesTag) return false;
 			}
 			if (statusFilter) {
 				if (getStatusOrSeverity(item, activeTarget).trim() !== statusFilter) return false;
 			}
+			if (areaFilter) {
+				const itemArea = String(
+					item.diachi || item.xaphuong || item.chu_diachi || "",
+				).trim();
+				if (itemArea !== areaFilter) return false;
+			}
 			if (creatorFilter) {
 				if (String(item.nguoi_tao || "").trim() !== creatorFilter) return false;
 			}
-			if (periodFilter) {
+			if (periodFilter || fromTime !== null || toTime !== null) {
 				const dt = parseFlexibleLocalDate(item.thoigian || item.ngay_tao, item.id);
 				if (!dt) return false;
 				if (periodFilter === "today") {
@@ -435,12 +516,28 @@ export default function DataCatalogModal({
 				} else if (periodFilter === "year") {
 					if (dt.getFullYear() !== curY) return false;
 				}
+				const t = dt.getTime();
+				if (fromTime !== null && t < fromTime) return false;
+				if (toTime !== null && t > toTime) return false;
 			}
 			if (q) {
+				const relatedIncidentText =
+					activeTarget === "doituong-list" && item.id !== undefined
+						? suspectIncidentIndex.get(String(item.id)) || ""
+						: "";
+				const tagsText = Array.isArray(item.nhom_nhan) ? item.nhom_nhan.join(" ") : "";
+				const historyText = Array.isArray(item.lich_su_hoat_dong)
+					? item.lich_su_hoat_dong
+							.map((h: any) => `${h.loai_su_kien || ""} ${h.noi_dung || ""}`)
+							.join(" ")
+					: "";
 				const searchable = [
 					item.ten,
 					item.hoten,
 					item.loai,
+					tagsText,
+					historyText,
+					relatedIncidentText,
 					item.diachi,
 					item.xaphuong,
 					item.mota,
@@ -498,10 +595,14 @@ export default function DataCatalogModal({
 		searchText,
 		typeFilter,
 		statusFilter,
+		areaFilter,
 		creatorFilter,
 		periodFilter,
+		dateFrom,
+		dateTo,
 		sortField,
 		sortDir,
+		suspectIncidentIndex,
 	]);
 
 	const totalPages = Math.max(1, Math.ceil(processedItems.length / pageSize));
@@ -549,7 +650,14 @@ export default function DataCatalogModal({
 
 	const isLayerHidden = hiddenLayers.includes(activeTarget);
 	const hasActiveFilters = Boolean(
-		searchText || typeFilter || statusFilter || creatorFilter || periodFilter,
+		searchText ||
+		typeFilter ||
+		statusFilter ||
+		areaFilter ||
+		creatorFilter ||
+		periodFilter ||
+		dateFrom ||
+		dateTo,
 	);
 
 	const toggleSort = (field: "title" | "type" | "status" | "date") => {
@@ -608,13 +716,13 @@ export default function DataCatalogModal({
 		}
 	};
 
-	const handleConfirmDeleteSingle = (item: any) => {
+	const handleConfirmDeleteSingle = async (item: any) => {
 		const title = getPrimaryTitle(item, activeTarget);
-		if (
-			window.confirm(
-				`Bạn có chắc chắn muốn xóa bản ghi "${title}" khỏi danh mục ${activeConfig.shortTitle}?`,
-			)
-		) {
+		const ok = await appConfirm(
+			`Bạn có chắc chắn muốn xóa bản ghi "${title}" khỏi danh mục ${activeConfig.shortTitle}?`,
+			{ confirmText: "Xóa", cancelText: "Hủy", danger: true },
+		);
+		if (ok) {
 			const key = getRecordKey(item, activeTarget);
 			onDeleteSingle(key, activeTarget);
 			setSelectedIds((prev) => {
@@ -625,13 +733,13 @@ export default function DataCatalogModal({
 		}
 	};
 
-	const handleConfirmBulkDelete = () => {
+	const handleConfirmBulkDelete = async () => {
 		if (selectedIds.size === 0) return;
-		if (
-			window.confirm(
-				`Xác nhận xóa vĩnh viễn ${selectedIds.size} bản ghi đã chọn trong danh mục "${activeConfig.shortTitle}"?`,
-			)
-		) {
+		const ok = await appConfirm(
+			`Xác nhận xóa vĩnh viễn ${selectedIds.size} bản ghi đã chọn trong danh mục "${activeConfig.shortTitle}"?`,
+			{ confirmText: "Xóa vĩnh viễn", cancelText: "Hủy", danger: true },
+		);
+		if (ok) {
 			onBulkDelete(Array.from(selectedIds), activeTarget);
 			setSelectedIds(new Set());
 		}
@@ -710,9 +818,13 @@ export default function DataCatalogModal({
 					STT: idx + 1,
 					"Họ và tên": item.hoten || "",
 					"Loại đối tượng": item.loai || "",
+					"Nhãn theo dõi": Array.isArray(item.nhom_nhan) ? item.nhom_nhan.join(", ") : "",
 					"Số CCCD": item.cccd || "",
 					"Số điện thoại": item.sdt || "",
 					"Địa chỉ": item.diachi || "",
+					"Số tiền án/lịch sử": Array.isArray(item.lich_su_hoat_dong)
+						? item.lich_su_hoat_dong.length
+						: 0,
 					"Mô tả": item.mota || "",
 					"Kinh độ": item.lng,
 					"Vĩ độ": item.lat,
@@ -728,6 +840,15 @@ export default function DataCatalogModal({
 					"Loại hình kinh doanh": item.loai_hinh_kd || "",
 					"Ngành nghề chính": item.loai || "",
 					"Trạng thái hoạt động": item.trangthai || "",
+					"Giấy phép ANTT": item.giay_phep_antt?.so_giay_phep
+						? `${item.giay_phep_antt.so_giay_phep} (${item.giay_phep_antt.trang_thai || ""})`
+						: "",
+					"Giấy phép PCCC": item.giay_phep_pccc?.so_giay_phep
+						? `${item.giay_phep_pccc.so_giay_phep} (${item.giay_phep_pccc.trang_thai || ""})`
+						: "",
+					"Số đợt kiểm tra": Array.isArray(item.lich_su_kiem_tra)
+						? item.lich_su_kiem_tra.length
+						: 0,
 					"Giấy phép liên quan": item.giay_phep || "",
 					"Họ tên chủ": item.chu_co_so || "",
 					"Ngày sinh chủ": item.chu_ngaysinh || "",
@@ -828,13 +949,13 @@ export default function DataCatalogModal({
 	};
 
 	return (
-		<div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-[1600] flex items-center justify-center p-3 sm:p-5">
+		<div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-[1600] flex items-center justify-center p-2 sm:p-4">
 			<motion.div
 				initial={{ opacity: 0, scale: 0.97, y: 12 }}
 				animate={{ opacity: 1, scale: 1, y: 0 }}
 				exit={{ opacity: 0, scale: 0.97, y: 12 }}
 				transition={{ duration: 0.18 }}
-				className="bg-white/95 backdrop-blur-xl rounded-[28px] w-full max-w-[1440px] h-[90vh] shadow-2xl border border-slate-200/90 flex flex-col overflow-hidden relative">
+				className="bg-white/95 backdrop-blur-xl rounded-[28px] w-[96vw] max-w-[1680px] h-[94vh] shadow-2xl border border-slate-200/90 flex flex-col overflow-hidden relative">
 				{/* TOP WORKSPACE HEADER */}
 				<div className="px-6 py-4 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 shrink-0">
 					<div className="flex items-center gap-3.5">
@@ -927,7 +1048,7 @@ export default function DataCatalogModal({
 
 				{/* CATEGORY SEGMENTED RAIL */}
 				<div className="px-6 py-2.5 bg-slate-50/80 border-b border-slate-200/70 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
-					{CATEGORY_CONFIGS.map((cat) => {
+					{visibleCategoryConfigs.map((cat) => {
 						const count = getRawItemsForTarget(cat.target).length;
 						const isActive = cat.target === activeTarget;
 						const hidden = hiddenLayers.includes(cat.target);
@@ -1019,13 +1140,30 @@ export default function DataCatalogModal({
 							</select>
 						)}
 
+						{/* Dynamic Area / Khu vực Filter (1.2.b) */}
+						{uniqueAreas.length > 0 && (
+							<select
+								value={areaFilter}
+								onChange={(e) => setAreaFilter(e.target.value)}
+								className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-sky-500 cursor-pointer max-w-[200px]">
+								<option value="">Mọi khu vực ({uniqueAreas.length})</option>
+								{uniqueAreas.map((area) => (
+									<option key={area} value={area}>
+										{area}
+									</option>
+								))}
+							</select>
+						)}
+
 						{/* Dynamic Creator Filter */}
 						{uniqueCreators.length > 0 && (
 							<select
 								value={creatorFilter}
 								onChange={(e) => setCreatorFilter(e.target.value)}
 								className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-sky-500 cursor-pointer max-w-[200px]">
-								<option value="">Mọi tài khoản tạo ({uniqueCreators.length})</option>
+								<option value="">
+									Mọi tài khoản tạo ({uniqueCreators.length})
+								</option>
 								{uniqueCreators.map((creator) => (
 									<option key={creator} value={creator}>
 										Người tạo: {creator}
@@ -1049,6 +1187,30 @@ export default function DataCatalogModal({
 							</select>
 						</div>
 
+						{/* Custom Date Range Filter (Từ ngày - Đến ngày) (1.2.b) */}
+						<div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+							<span className="text-[10px] font-bold text-slate-400 uppercase">
+								Từ
+							</span>
+							<input
+								type="date"
+								value={dateFrom}
+								onChange={(e) => setDateFrom(e.target.value)}
+								className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer"
+								title="Lọc từ ngày"
+							/>
+							<span className="text-[10px] font-bold text-slate-400 uppercase">
+								Đến
+							</span>
+							<input
+								type="date"
+								value={dateTo}
+								onChange={(e) => setDateTo(e.target.value)}
+								className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer"
+								title="Lọc đến ngày"
+							/>
+						</div>
+
 						{hasActiveFilters && (
 							<button
 								type="button"
@@ -1056,8 +1218,11 @@ export default function DataCatalogModal({
 									setSearchText("");
 									setTypeFilter("");
 									setStatusFilter("");
+									setAreaFilter("");
 									setCreatorFilter("");
 									setPeriodFilter("");
+									setDateFrom("");
+									setDateTo("");
 								}}
 								className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer">
 								<FilterX className="w-3.5 h-3.5" />
@@ -1130,8 +1295,11 @@ export default function DataCatalogModal({
 												setSearchText("");
 												setTypeFilter("");
 												setStatusFilter("");
+												setAreaFilter("");
 												setCreatorFilter("");
 												setPeriodFilter("");
+												setDateFrom("");
+												setDateTo("");
 											}}
 											className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-white hover:bg-slate-900 cursor-pointer">
 											Đặt lại bộ lọc
@@ -1274,22 +1442,34 @@ export default function DataCatalogModal({
 
 												{/* Column 1: Primary Title & Sub-caption */}
 												<td className="py-3 px-3 max-w-[280px]">
-													<div className="font-bold text-slate-800 group-hover:text-sky-700 truncate">
-														{title}
-													</div>
-													{(item.mota ||
-														item.description ||
-														item.mst ||
-														item.groupId) && (
-														<div className="text-[11px] text-slate-400 truncate mt-0.5">
-															{activeTarget === "cskd-list" &&
-															item.mst
-																? `MST: ${item.mst}`
-																: item.groupId
-																	? `Nhóm: ${item.groupId}${item.mota ? ` • ${item.mota}` : ""}`
-																	: item.mota || item.description}
+													<div className="flex items-center gap-2.5 min-w-0">
+														{item.hinh_anh && (
+															<img
+																src={item.hinh_anh}
+																alt={title}
+																className="w-9 h-9 rounded-xl object-cover border border-cyan-200 shrink-0"
+															/>
+														)}
+														<div className="min-w-0 flex-1">
+															<div className="font-bold text-slate-800 group-hover:text-sky-700 truncate">
+																{title}
+															</div>
+															{(item.mota ||
+																item.description ||
+																item.mst ||
+																item.groupId) && (
+																<div className="text-[11px] text-slate-400 truncate mt-0.5">
+																	{activeTarget === "cskd-list" &&
+																	item.mst
+																		? `MST: ${item.mst}`
+																		: item.groupId
+																			? `Nhóm: ${item.groupId}${item.mota ? ` • ${item.mota}` : ""}`
+																			: item.mota ||
+																				item.description}
+																</div>
+															)}
 														</div>
-													)}
+													</div>
 												</td>
 
 												{/* Column 2: Contextual Info */}
@@ -1387,7 +1567,7 @@ export default function DataCatalogModal({
 												{/* Column 4: Status / Severity / Classification */}
 												<td className="py-3 px-3">
 													{activeTarget === "doituong-list" ? (
-														<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+														<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
 															{item.loai || "Theo dõi"}
 														</span>
 													) : activeTarget === "coquan-list" ? (
@@ -1493,13 +1673,21 @@ export default function DataCatalogModal({
 											<div>
 												<div className="flex items-start justify-between gap-2">
 													<div className="flex items-center gap-2.5 min-w-0">
-														<div
-															className={`w-8 h-8 rounded-xl ${activeConfig.accentBg} ${activeConfig.accentText} flex items-center justify-center shrink-0`}>
-															{renderCategoryIcon(
-																activeTarget,
-																"w-4 h-4",
-															)}
-														</div>
+														{item.hinh_anh ? (
+															<img
+																src={item.hinh_anh}
+																alt={title}
+																className="w-10 h-10 rounded-xl object-cover border border-cyan-200 shrink-0"
+															/>
+														) : (
+															<div
+																className={`w-8 h-8 rounded-xl ${activeConfig.accentBg} ${activeConfig.accentText} flex items-center justify-center shrink-0`}>
+																{renderCategoryIcon(
+																	activeTarget,
+																	"w-4 h-4",
+																)}
+															</div>
+														)}
 														<div className="min-w-0">
 															<h4 className="text-xs font-bold text-slate-800 group-hover:text-sky-700 truncate">
 																{title}
@@ -1626,6 +1814,47 @@ export default function DataCatalogModal({
 								</div>
 
 								<div className="flex-1 overflow-y-auto p-5 space-y-3 custom-scrollbar text-xs">
+									{/* Ảnh nhận dạng đối tượng (nếu có) */}
+									{inspectedItem.hinh_anh && (
+										<div className="bg-cyan-50/40 border border-cyan-200/70 rounded-2xl p-3 space-y-2">
+											<div className="flex items-center justify-between">
+												<span className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-700 flex items-center gap-1">
+													<Camera className="w-3.5 h-3.5" />
+													Ảnh nhận dạng
+												</span>
+												<button
+													type="button"
+													onClick={() =>
+														setPreviewImageUrl({
+															src: inspectedItem.hinh_anh,
+															caption: `${getPrimaryTitle(inspectedItem, activeTarget)}${inspectedItem.cccd ? ` • CCCD: ${inspectedItem.cccd}` : ""}`,
+														})
+													}
+													className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-600 hover:text-cyan-800 cursor-pointer">
+													<ZoomIn className="w-3 h-3" />
+													<span>Phóng to</span>
+												</button>
+											</div>
+											<div
+												onClick={() =>
+													setPreviewImageUrl({
+														src: inspectedItem.hinh_anh,
+														caption: `${getPrimaryTitle(inspectedItem, activeTarget)}${inspectedItem.cccd ? ` • CCCD: ${inspectedItem.cccd}` : ""}`,
+													})
+												}
+												className="w-full h-48 rounded-xl overflow-hidden bg-white border border-cyan-100 cursor-zoom-in">
+												<img
+													src={inspectedItem.hinh_anh}
+													alt={getPrimaryTitle(
+														inspectedItem,
+														activeTarget,
+													)}
+													className="w-full h-full object-contain"
+												/>
+											</div>
+										</div>
+									)}
+
 									{getStatusOrSeverity(inspectedItem, activeTarget) && (
 										<div className="flex items-center justify-between py-2 border-b border-slate-100">
 											<span className="text-slate-400 font-semibold">
@@ -1637,6 +1866,26 @@ export default function DataCatalogModal({
 										</div>
 									)}
 
+									{/* Nhãn phân loại nhiều nhóm (Đối tượng) */}
+									{Array.isArray(inspectedItem.nhom_nhan) &&
+										inspectedItem.nhom_nhan.length > 0 && (
+											<div className="bg-cyan-50/40 border border-cyan-100 rounded-xl p-3 space-y-1.5">
+												<div className="text-[10px] font-bold uppercase tracking-wider text-cyan-700 flex items-center gap-1">
+													<Tag className="w-3 h-3" />
+													Nhãn theo dõi
+												</div>
+												<div className="flex flex-wrap gap-1.5">
+													{inspectedItem.nhom_nhan.map((tag: string) => (
+														<span
+															key={tag}
+															className="px-2 py-0.5 rounded-lg bg-white text-cyan-700 border border-cyan-200 text-[10px] font-extrabold">
+															#{tag}
+														</span>
+													))}
+												</div>
+											</div>
+										)}
+
 									{[
 										{ label: "Phân loại", val: inspectedItem.loai },
 										{
@@ -1644,7 +1893,7 @@ export default function DataCatalogModal({
 											val: inspectedItem.loai_hinh_kd,
 										},
 										{ label: "Mã số thuế", val: inspectedItem.mst, mono: true },
-										{ label: "Giấy phép", val: inspectedItem.giay_phep },
+										{ label: "Giấy phép khác", val: inspectedItem.giay_phep },
 										{ label: "Số CCCD", val: inspectedItem.cccd, mono: true },
 										{
 											label: "Số điện thoại",
@@ -1659,11 +1908,37 @@ export default function DataCatalogModal({
 											val:
 												inspectedItem.chu_camera || inspectedItem.chu_co_so,
 										},
+										{
+											label: "Ngày sinh chủ cơ sở",
+											val: inspectedItem.chu_ngaysinh,
+										},
+										{
+											label: "CCCD chủ cơ sở",
+											val: inspectedItem.chu_cccd,
+											mono: true,
+										},
+										{
+											label: "Địa chỉ chủ cơ sở",
+											val: inspectedItem.chu_diachi,
+										},
 										{ label: "Người quản lý", val: inspectedItem.quan_ly },
+										{
+											label: "Ngày sinh quản lý",
+											val: inspectedItem.quan_ly_ngaysinh,
+										},
+										{
+											label: "CCCD quản lý",
+											val: inspectedItem.quan_ly_cccd,
+											mono: true,
+										},
 										{
 											label: "SĐT quản lý",
 											val: inspectedItem.quan_ly_sdt,
 											mono: true,
+										},
+										{
+											label: "Địa chỉ quản lý",
+											val: inspectedItem.quan_ly_diachi,
 										},
 										{
 											label: "Nhóm vụ việc",
@@ -1737,6 +2012,170 @@ export default function DataCatalogModal({
 												</div>
 											</div>
 										))}
+
+									{/* Tiền án, tiền sự & Lịch sử hoạt động (Đối tượng) */}
+									{Array.isArray(inspectedItem.lich_su_hoat_dong) &&
+										inspectedItem.lich_su_hoat_dong.length > 0 && (
+											<div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 space-y-2">
+												<div className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-700 flex items-center gap-1">
+													<History className="w-3.5 h-3.5" />
+													Tiền án, tiền sự & Lịch sử (
+													{inspectedItem.lich_su_hoat_dong.length})
+												</div>
+												<div className="space-y-1.5">
+													{inspectedItem.lich_su_hoat_dong.map(
+														(log: any, i: number) => (
+															<div
+																key={log.id || i}
+																className="p-2 bg-white rounded-lg border border-slate-100 space-y-0.5">
+																<div className="flex items-center justify-between gap-2">
+																	<span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 text-[9px] font-extrabold uppercase">
+																		{log.loai_su_kien}
+																	</span>
+																	<span className="text-[10px] font-mono text-slate-400">
+																		{log.ngay}
+																	</span>
+																</div>
+																<p className="text-[11px] text-slate-700 leading-relaxed">
+																	{log.noi_dung}
+																</p>
+															</div>
+														),
+													)}
+												</div>
+											</div>
+										)}
+
+									{/* Các vụ việc liên quan của Đối tượng */}
+									{activeTarget === "doituong-list" &&
+										(() => {
+											const relIncidents = data.vuviec.filter(
+												(vv) =>
+													Array.isArray(vv.suspectIds) &&
+													vv.suspectIds
+														.map(String)
+														.includes(String(inspectedItem.id)),
+											);
+											if (relIncidents.length === 0) return null;
+											return (
+												<div className="bg-rose-50/40 border border-rose-200/70 rounded-xl p-3 space-y-1.5">
+													<div className="text-[10px] font-extrabold uppercase tracking-wider text-rose-700">
+														Vụ việc liên quan ({relIncidents.length})
+													</div>
+													{relIncidents.map((vv, i) => (
+														<div
+															key={vv.id || i}
+															className="p-2 bg-white rounded-lg border border-rose-100 flex items-center justify-between gap-2">
+															<span className="font-bold text-slate-700 truncate">
+																{vv.loai}
+															</span>
+															<span className="text-[10px] font-bold text-rose-600 shrink-0">
+																{vv.trangthai || "Mới"}
+															</span>
+														</div>
+													))}
+												</div>
+											);
+										})()}
+
+									{/* Giấy phép ANTT & PCCC (CSKD) */}
+									{activeTarget === "cskd-list" &&
+										(inspectedItem.giay_phep_antt ||
+											inspectedItem.giay_phep_pccc) &&
+										(() => {
+											const anttSt = evaluateLicenseStatus(
+												inspectedItem.giay_phep_antt,
+											);
+											const pcccSt = evaluateLicenseStatus(
+												inspectedItem.giay_phep_pccc,
+											);
+											return (
+												<div className="bg-sky-50/40 border border-sky-200/70 rounded-xl p-3 space-y-2">
+													<div className="text-[10px] font-extrabold uppercase tracking-wider text-sky-800 flex items-center gap-1">
+														<ShieldCheck className="w-3.5 h-3.5" />
+														Giấy phép ANTT & PCCC
+													</div>
+													<div className="p-2 bg-white rounded-lg border border-sky-100 flex items-center justify-between gap-2">
+														<div>
+															<div className="font-bold text-slate-700">
+																ANTT:{" "}
+																{inspectedItem.giay_phep_antt
+																	?.so_giay_phep || "—"}
+															</div>
+															{inspectedItem.giay_phep_antt
+																?.ngay_het_han && (
+																<div className="text-[10px] text-slate-400">
+																	Hết hạn:{" "}
+																	{
+																		inspectedItem.giay_phep_antt
+																			.ngay_het_han
+																	}
+																</div>
+															)}
+														</div>
+														<span className="text-[10px] font-extrabold text-sky-700">
+															{anttSt.label}
+														</span>
+													</div>
+													<div className="p-2 bg-white rounded-lg border border-orange-100 flex items-center justify-between gap-2">
+														<div>
+															<div className="font-bold text-slate-700">
+																PCCC:{" "}
+																{inspectedItem.giay_phep_pccc
+																	?.so_giay_phep || "—"}
+															</div>
+															{inspectedItem.giay_phep_pccc
+																?.ngay_het_han && (
+																<div className="text-[10px] text-slate-400">
+																	Hết hạn:{" "}
+																	{
+																		inspectedItem.giay_phep_pccc
+																			.ngay_het_han
+																	}
+																</div>
+															)}
+														</div>
+														<span className="text-[10px] font-extrabold text-orange-700">
+															{pcccSt.label}
+														</span>
+													</div>
+												</div>
+											);
+										})()}
+
+									{/* Lịch sử kiểm tra (CSKD) */}
+									{activeTarget === "cskd-list" &&
+										Array.isArray(inspectedItem.lich_su_kiem_tra) &&
+										inspectedItem.lich_su_kiem_tra.length > 0 && (
+											<div className="bg-pink-50/40 border border-pink-200/70 rounded-xl p-3 space-y-1.5">
+												<div className="text-[10px] font-extrabold uppercase tracking-wider text-pink-700 flex items-center gap-1">
+													<ClipboardCheck className="w-3.5 h-3.5" />
+													Lịch sử kiểm tra (
+													{inspectedItem.lich_su_kiem_tra.length})
+												</div>
+												{inspectedItem.lich_su_kiem_tra.map(
+													(rec: any, i: number) => (
+														<div
+															key={rec.id || i}
+															className="p-2 bg-white rounded-lg border border-pink-100 space-y-0.5">
+															<div className="flex items-center justify-between">
+																<span className="font-mono text-[10px] text-slate-500">
+																	{rec.ngay_kiem_tra}
+																</span>
+																<span className="font-extrabold text-[10px] text-pink-700">
+																	{rec.ket_qua}
+																</span>
+															</div>
+															{rec.noi_dung && (
+																<p className="text-[11px] text-slate-700">
+																	{rec.noi_dung}
+																</p>
+															)}
+														</div>
+													),
+												)}
+											</div>
+										)}
 
 									{(inspectedItem.mota || inspectedItem.description) && (
 										<div className="bg-slate-50/80 border border-slate-100 rounded-xl p-3">
@@ -1902,6 +2341,32 @@ export default function DataCatalogModal({
 					</div>
 				</div>
 			</motion.div>
+
+			{/* Fullscreen Photo Preview Lightbox */}
+			{previewImageUrl && (
+				<div
+					onClick={() => setPreviewImageUrl(null)}
+					className="fixed inset-0 z-[2600] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-6 cursor-zoom-out">
+					<div
+						onClick={(e) => e.stopPropagation()}
+						className="relative max-w-2xl max-h-[85vh] bg-white rounded-3xl p-3 shadow-2xl border border-slate-200 flex flex-col items-center gap-2">
+						<button
+							type="button"
+							onClick={() => setPreviewImageUrl(null)}
+							className="absolute -top-3 -right-3 w-9 h-9 rounded-full bg-white text-slate-700 hover:bg-rose-600 hover:text-white shadow-lg border border-slate-200 flex items-center justify-center cursor-pointer transition-colors">
+							<X className="w-4 h-4" />
+						</button>
+						<img
+							src={previewImageUrl.src}
+							alt={previewImageUrl.caption}
+							className="max-h-[75vh] max-w-full rounded-2xl object-contain"
+						/>
+						<div className="text-xs font-extrabold text-slate-700 uppercase tracking-wide py-1">
+							{previewImageUrl.caption}
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

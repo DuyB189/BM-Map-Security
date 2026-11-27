@@ -1,9 +1,20 @@
-export type UserRole = "owner" | "admin" | "staff";
+export type UserRole = "owner" | "admin" | "leader" | "staff";
+
+export const ALL_GIS_CATEGORIES = [
+	"vuviec-list",
+	"camera-list",
+	"doituong-list",
+	"coquan-list",
+	"cskd-list",
+	"diemnong-list",
+	"tuyenduong-list",
+] as const;
 
 export interface ManagedUserAccount {
 	username: string;
 	fullName: string;
 	role: UserRole;
+	allowedCategories?: string[];
 	isOwner: boolean;
 	isActive: boolean;
 	isLocked: boolean;
@@ -19,6 +30,8 @@ export const getRoleDisplayName = (role?: string): string => {
 			return "Chủ quản hệ thống";
 		case "admin":
 			return "Quản trị viên";
+		case "leader":
+			return "Lãnh đạo";
 		case "staff":
 			return "Cán bộ nhập liệu";
 		default:
@@ -227,6 +240,7 @@ export const authService = {
 		username?: string;
 		fullName?: string;
 		role?: UserRole;
+		allowedCategories?: string[];
 		isLocked?: boolean;
 		failedAttempts?: number;
 		remainingAttempts?: number;
@@ -322,6 +336,12 @@ export const authService = {
 				username: matchedSub.username,
 				fullName: matchedSub.fullName,
 				role: matchedSub.role || "staff",
+				allowedCategories:
+					(matchedSub.role || "staff") === "staff"
+						? Array.isArray(matchedSub.allowedCategories)
+							? matchedSub.allowedCategories
+							: [...ALL_GIS_CATEGORIES]
+						: [...ALL_GIS_CATEGORIES],
 			};
 		}
 
@@ -395,6 +415,7 @@ export const authService = {
 			username: acc.username,
 			fullName: acc.fullName || "Chủ quản hệ thống",
 			role: "owner",
+			allowedCategories: [...ALL_GIS_CATEGORIES],
 		};
 	},
 
@@ -598,6 +619,7 @@ export const authService = {
 			username: store.account.username,
 			fullName: store.account.fullName || "Chủ quản hệ thống",
 			role: "owner",
+			allowedCategories: [...ALL_GIS_CATEGORIES],
 			isOwner: true,
 			isActive: true,
 			isLocked: !!store.account.isLocked,
@@ -610,6 +632,12 @@ export const authService = {
 			username: u.username,
 			fullName: u.fullName,
 			role: u.role || "staff",
+			allowedCategories:
+				(u.role || "staff") === "staff"
+					? Array.isArray(u.allowedCategories)
+						? u.allowedCategories
+						: [...ALL_GIS_CATEGORIES]
+					: [...ALL_GIS_CATEGORIES],
 			isOwner: false,
 			isActive: u.isActive !== false,
 			isLocked: !!u.isLocked,
@@ -625,7 +653,8 @@ export const authService = {
 		username: string;
 		fullName: string;
 		password: string;
-		role: "admin" | "staff";
+		role: "admin" | "leader" | "staff";
+		allowedCategories?: string[];
 	}): Promise<{ success: boolean; user?: ManagedUserAccount; error?: string }> {
 		const actorUsername = sessionStorage.getItem("gis_user") || undefined;
 		const ipc = getIpc();
@@ -641,6 +670,15 @@ export const authService = {
 		if (payload.password.length < 6) {
 			return { success: false, error: "Mật khẩu phải có ít nhất 6 ký tự." };
 		}
+		const cats =
+			payload.role === "staff"
+				? Array.isArray(payload.allowedCategories)
+					? payload.allowedCategories
+					: [...ALL_GIS_CATEGORIES]
+				: [...ALL_GIS_CATEGORIES];
+		if (payload.role === "staff" && cats.length === 0) {
+			return { success: false, error: "Vui lòng chọn ít nhất 1 danh mục cho tài khoản Cán bộ." };
+		}
 		store.users = Array.isArray(store.users) ? store.users : [];
 		if (
 			store.account.username.toLowerCase() === cleanUser.toLowerCase() ||
@@ -653,6 +691,7 @@ export const authService = {
 			username: cleanUser,
 			fullName: payload.fullName.trim() || cleanUser,
 			role: payload.role,
+			allowedCategories: cats,
 			password: payload.password,
 			isActive: true,
 			isLocked: false,
@@ -679,6 +718,7 @@ export const authService = {
 				username: newU.username,
 				fullName: newU.fullName,
 				role: newU.role,
+				allowedCategories: newU.allowedCategories,
 				isOwner: false,
 				isActive: true,
 				isLocked: false,
@@ -693,7 +733,8 @@ export const authService = {
 	async updateUser(payload: {
 		username: string;
 		fullName?: string;
-		role?: "admin" | "staff";
+		role?: "admin" | "leader" | "staff";
+		allowedCategories?: string[];
 		isActive?: boolean;
 		unlock?: boolean;
 		newPassword?: string;
@@ -709,7 +750,18 @@ export const authService = {
 		);
 		if (!target) return { success: false, error: "Không tìm thấy tài khoản." };
 		if (payload.fullName) target.fullName = payload.fullName.trim();
-		if (payload.role) target.role = payload.role;
+		if (payload.role) {
+			target.role = payload.role;
+			if (payload.role !== "staff") {
+				target.allowedCategories = [...ALL_GIS_CATEGORIES];
+			}
+		}
+		if (Array.isArray(payload.allowedCategories) && target.role === "staff") {
+			if (payload.allowedCategories.length === 0) {
+				return { success: false, error: "Tài khoản Cán bộ phải có ít nhất 1 danh mục." };
+			}
+			target.allowedCategories = payload.allowedCategories;
+		}
 		if (typeof payload.isActive === "boolean") target.isActive = payload.isActive;
 		if (payload.unlock) {
 			target.isLocked = false;

@@ -72,16 +72,14 @@ export default function TopBar({
 	const canManageUsers = activeUserRole === "owner" || activeUserRole === "admin";
 	const settingsRef = useRef<HTMLDivElement>(null);
 
-	// Tự động đóng menu Hệ thống khi bấm ra ngoài
+	// Đóng modal Hệ thống bằng phím ESC
 	useEffect(() => {
 		if (!showSettings) return;
-		const onClickOutside = (e: MouseEvent) => {
-			if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
-				setShowSettings(false);
-			}
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setShowSettings(false);
 		};
-		document.addEventListener("mousedown", onClickOutside);
-		return () => document.removeEventListener("mousedown", onClickOutside);
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [showSettings, setShowSettings]);
 
 	return (
@@ -114,8 +112,15 @@ export default function TopBar({
 					<div className="h-7 w-px bg-slate-200 hidden md:block shrink-0" />
 
 					<div className="flex items-center gap-2.5 min-w-0">
-						<div className="w-10 h-10 rounded-xl bg-sky-600 text-white hidden md:flex items-center justify-center shadow-xs shrink-0">
-							<ShieldCheck className="w-5 h-5" />
+						<div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 hidden md:flex items-center justify-center shadow-xs shrink-0 overflow-hidden p-0.5">
+							<img
+								src="./app-icon.png"
+								alt="Logo Bản đồ ANTT"
+								onError={(e) => {
+									(e.currentTarget as HTMLImageElement).src = "./logo.png";
+								}}
+								className="w-full h-full object-contain rounded-lg"
+							/>
 						</div>
 						<div className="min-w-0">
 							<h1 className="text-sm lg:text-[15px] font-extrabold tracking-tight text-slate-800 uppercase leading-tight truncate">
@@ -176,7 +181,7 @@ export default function TopBar({
 
 					<div className="h-7 w-px bg-slate-200 mx-0.5 hidden sm:block" />
 
-					{/* 4. Menu Hệ thống & Tài khoản */}
+					{/* 4. Nút mở Bảng điều khiển Hệ thống & Tài khoản */}
 					<div ref={settingsRef} className="relative">
 						<button
 							type="button"
@@ -186,7 +191,7 @@ export default function TopBar({
 									? "bg-slate-900 text-white border-slate-900 shadow-sm"
 									: "bg-slate-100/90 hover:bg-slate-200/80 text-slate-700 border-slate-200"
 							}`}
-							title="Cài đặt bản đồ, lịch sử hệ thống, mật khẩu và đăng xuất">
+							title="Mở bảng chức năng hệ thống, tài khoản, sao lưu và bản đồ nền">
 							<Settings
 								className={`w-4 h-4 shrink-0 ${isUpdatingMap ? "animate-spin" : ""}`}
 							/>
@@ -197,99 +202,138 @@ export default function TopBar({
 								}`}
 							/>
 						</button>
+					</div>
+				</div>
+			</header>
 
-						<AnimatePresence>
-							{showSettings && (
-								<motion.div
-									initial={{ opacity: 0, y: 8, scale: 0.97 }}
-									animate={{ opacity: 1, y: 0, scale: 1 }}
-									exit={{ opacity: 0, y: 8, scale: 0.97 }}
-									transition={{ duration: 0.15 }}
-									className="absolute right-0 top-full mt-2.5 w-80 bg-white/98 backdrop-blur-xl p-2.5 rounded-2xl z-[1200] shadow-2xl border border-slate-200 space-y-1">
-									<div className="px-3 py-2.5 bg-slate-50 rounded-xl border border-slate-100 mb-1.5">
-										<div className="flex items-center justify-between gap-2">
-											<span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-												Đang đăng nhập
-											</span>
-											<span className="px-2 py-0.5 rounded-md bg-sky-100 text-sky-700 text-[10px] font-extrabold uppercase">
+			{/* MODAL DẠNG BẢNG Ô CHỨC NĂNG HỆ THỐNG GIỮA MÀN HÌNH */}
+			<AnimatePresence>
+				{showSettings && (
+					<div
+						onClick={() => setShowSettings(false)}
+						className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-[2100] flex items-center justify-center p-4 sm:p-6">
+						<motion.div
+							initial={{ opacity: 0, scale: 0.95, y: 12 }}
+							animate={{ opacity: 1, scale: 1, y: 0 }}
+							exit={{ opacity: 0, scale: 0.95, y: 12 }}
+							transition={{ duration: 0.18 }}
+							onClick={(e) => e.stopPropagation()}
+							className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+							{/* Header Modal */}
+							<div className="px-6 py-4 bg-slate-50/90 border-b border-slate-200/80 flex items-center justify-between gap-4">
+								<div className="flex items-center gap-3 min-w-0">
+									<div className="w-11 h-11 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center justify-center overflow-hidden p-1 shrink-0">
+										<img
+											src="./app-icon.png"
+											alt="Logo"
+											onError={(e) => {
+												(e.currentTarget as HTMLImageElement).src = "./logo.png";
+											}}
+											className="w-full h-full object-contain rounded-xl"
+										/>
+									</div>
+									<div className="min-w-0">
+										<div className="flex items-center gap-2 flex-wrap">
+											<h2 className="text-sm sm:text-base font-extrabold text-slate-800 uppercase tracking-wide">
+												Quản trị &amp; Tiện ích Hệ thống
+											</h2>
+											<span className="px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-extrabold uppercase">
 												{getRoleDisplayName(activeUserRole)}
 											</span>
 										</div>
-										<div className="text-[13px] font-extrabold text-slate-800 mt-0.5 truncate">
-											Tài khoản: {activeUsername}
-										</div>
+										<p className="text-xs text-slate-500 font-semibold mt-0.5 truncate">
+											Đang đăng nhập:{" "}
+											<span className="font-mono font-bold text-slate-800">
+												{activeUsername}
+											</span>
+										</p>
 									</div>
+								</div>
 
+								<button
+									type="button"
+									onClick={() => setShowSettings(false)}
+									className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer shrink-0"
+									title="Đóng (ESC)">
+									<X className="w-5 h-5" />
+								</button>
+							</div>
+
+							{/* Lưới bảng các ô chức năng */}
+							<div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50/40">
+								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
 									{canManageUsers && (
-										<button
-											type="button"
-											onClick={() => {
-												setShowSettings(false);
-												onOpenUserManagement();
-											}}
-											className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-violet-50 text-left transition-colors group cursor-pointer">
-											<div className="flex items-center gap-3 min-w-0">
-												<div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 group-hover:bg-violet-600 group-hover:text-white transition-colors">
-													<Users className="w-4 h-4" />
+										<>
+											<button
+												type="button"
+												onClick={() => {
+													setShowSettings(false);
+													onOpenUserManagement();
+												}}
+												className="group bg-white hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 rounded-2xl p-4 text-left flex flex-col justify-between gap-3 shadow-xs hover:shadow-md transition-all cursor-pointer">
+												<div className="flex items-start justify-between gap-2">
+													<div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-700 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0">
+														<Users className="w-5 h-5" />
+													</div>
+													<ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
 												</div>
-												<div className="min-w-0">
-													<div className="text-[13px] font-bold text-slate-800 group-hover:text-violet-700 truncate">
+												<div>
+													<div className="text-[13px] font-extrabold text-slate-800 group-hover:text-blue-700 leading-snug">
 														Quản lý tài khoản người dùng
 													</div>
-													<div className="text-[11px] text-slate-500 truncate">
-														Tạo & phân quyền tài khoản sử dụng chung
+													<div className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+														Tạo tài khoản, phân vai trò &amp; giới hạn danh mục cho cán bộ
 													</div>
 												</div>
-											</div>
-											<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-violet-600 shrink-0" />
-										</button>
+											</button>
+
+											<button
+												type="button"
+												onClick={() => {
+													setShowSettings(false);
+													onOpenBackupRestore();
+												}}
+												className="group bg-white hover:bg-teal-50/50 border border-slate-200 hover:border-teal-300 rounded-2xl p-4 text-left flex flex-col justify-between gap-3 shadow-xs hover:shadow-md transition-all cursor-pointer">
+												<div className="flex items-start justify-between gap-2">
+													<div className="w-11 h-11 rounded-2xl bg-teal-100 text-teal-700 group-hover:bg-teal-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0">
+														<HardDriveDownload className="w-5 h-5" />
+													</div>
+													<ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-teal-600 group-hover:translate-x-0.5 transition-all" />
+												</div>
+												<div>
+													<div className="text-[13px] font-extrabold text-slate-800 group-hover:text-teal-700 leading-snug">
+														Sao lưu &amp; Chuyển máy
+													</div>
+													<div className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+														Lưu dự phòng mã hóa ra USB hoặc khôi phục sang máy mới
+													</div>
+												</div>
+											</button>
+
+											<button
+												type="button"
+												onClick={() => {
+													setShowSettings(false);
+													onOpenOfflineMap();
+												}}
+												className="group bg-white hover:bg-sky-50/50 border border-slate-200 hover:border-sky-300 rounded-2xl p-4 text-left flex flex-col justify-between gap-3 shadow-xs hover:shadow-md transition-all cursor-pointer">
+												<div className="flex items-start justify-between gap-2">
+													<div className="w-11 h-11 rounded-2xl bg-sky-100 text-sky-600 group-hover:bg-sky-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0">
+														<Database className="w-5 h-5" />
+													</div>
+													<ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-sky-600 group-hover:translate-x-0.5 transition-all" />
+												</div>
+												<div>
+													<div className="text-[13px] font-extrabold text-slate-800 group-hover:text-sky-700 leading-snug">
+														Bản đồ nền ngoại tuyến
+													</div>
+													<div className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+														Kiểm tra trạng thái &amp; cập nhật tệp bản đồ địa bàn (.mbtiles)
+													</div>
+												</div>
+											</button>
+										</>
 									)}
-
-									<button
-										type="button"
-										onClick={() => {
-											setShowSettings(false);
-											onOpenBackupRestore();
-										}}
-										className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-teal-50 text-left transition-colors group cursor-pointer">
-										<div className="flex items-center gap-3 min-w-0">
-											<div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0 group-hover:bg-teal-600 group-hover:text-white transition-colors">
-												<HardDriveDownload className="w-4 h-4" />
-											</div>
-											<div className="min-w-0">
-												<div className="text-[13px] font-bold text-slate-800 group-hover:text-teal-700 truncate">
-													Sao lưu & Chuyển sang máy khác
-												</div>
-												<div className="text-[11px] text-slate-500 truncate">
-													Lưu dự phòng ra USB hoặc chuyển sang máy mới
-												</div>
-											</div>
-										</div>
-										<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-teal-600 shrink-0" />
-									</button>
-
-									<button
-										type="button"
-										onClick={() => {
-											setShowSettings(false);
-											onOpenOfflineMap();
-										}}
-										className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-sky-50 text-left transition-colors group cursor-pointer">
-										<div className="flex items-center gap-3 min-w-0">
-											<div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center shrink-0 group-hover:bg-sky-600 group-hover:text-white transition-colors">
-												<Database className="w-4 h-4" />
-											</div>
-											<div className="min-w-0">
-												<div className="text-[13px] font-bold text-slate-800 group-hover:text-sky-700 truncate">
-													Bản đồ nền ngoại tuyến
-												</div>
-												<div className="text-[11px] text-slate-500 truncate">
-													Kiểm tra & cập nhật dữ liệu bản đồ địa bàn
-												</div>
-											</div>
-										</div>
-										<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-sky-600 shrink-0" />
-									</button>
 
 									<button
 										type="button"
@@ -297,21 +341,21 @@ export default function TopBar({
 											setShowSettings(false);
 											onOpenSystemHistory();
 										}}
-										className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-amber-50 text-left transition-colors group cursor-pointer">
-										<div className="flex items-center gap-3 min-w-0">
-											<div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-												<History className="w-4 h-4" />
+										className="group bg-white hover:bg-amber-50/50 border border-slate-200 hover:border-amber-300 rounded-2xl p-4 text-left flex flex-col justify-between gap-3 shadow-xs hover:shadow-md transition-all cursor-pointer">
+										<div className="flex items-start justify-between gap-2">
+											<div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-600 group-hover:bg-amber-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0">
+												<History className="w-5 h-5" />
 											</div>
-											<div className="min-w-0">
-												<div className="text-[13px] font-bold text-slate-800 group-hover:text-amber-700 truncate">
-													Lịch sử hoạt động hệ thống
-												</div>
-												<div className="text-[11px] text-slate-500 truncate">
-													Nhật ký đăng nhập & thêm/sửa/xóa
-												</div>
+											<ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
+										</div>
+										<div>
+											<div className="text-[13px] font-extrabold text-slate-800 group-hover:text-amber-700 leading-snug">
+												Lịch sử hoạt động hệ thống
+											</div>
+											<div className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+												Theo dõi nhật ký đăng nhập &amp; toàn bộ thao tác Thêm/Sửa/Xóa
 											</div>
 										</div>
-										<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 shrink-0" />
 									</button>
 
 									<button
@@ -320,21 +364,21 @@ export default function TopBar({
 											setShowSettings(false);
 											onOpenChangePassword();
 										}}
-										className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-indigo-50 text-left transition-colors group cursor-pointer">
-										<div className="flex items-center gap-3 min-w-0">
-											<div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-												<KeyRound className="w-4 h-4" />
+										className="group bg-white hover:bg-cyan-50/50 border border-slate-200 hover:border-cyan-300 rounded-2xl p-4 text-left flex flex-col justify-between gap-3 shadow-xs hover:shadow-md transition-all cursor-pointer">
+										<div className="flex items-start justify-between gap-2">
+											<div className="w-11 h-11 rounded-2xl bg-cyan-100 text-cyan-700 group-hover:bg-cyan-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0">
+												<KeyRound className="w-5 h-5" />
 											</div>
-											<div className="min-w-0">
-												<div className="text-[13px] font-bold text-slate-800 group-hover:text-indigo-700 truncate">
-													Bảo mật & Đổi mật khẩu
-												</div>
-												<div className="text-[11px] text-slate-500 truncate">
-													Đổi mật khẩu & tạo lại Mã Chủ Quản
-												</div>
+											<ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-cyan-600 group-hover:translate-x-0.5 transition-all" />
+										</div>
+										<div>
+											<div className="text-[13px] font-extrabold text-slate-800 group-hover:text-cyan-700 leading-snug">
+												Bảo mật &amp; Đổi mật khẩu
+											</div>
+											<div className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+												Thay đổi mật khẩu đăng nhập &amp; tạo lại Mã Chủ Quản
 											</div>
 										</div>
-										<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 shrink-0" />
 									</button>
 
 									<button
@@ -343,50 +387,45 @@ export default function TopBar({
 											setShowSettings(false);
 											onReloadApp();
 										}}
-										className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-emerald-50 text-left transition-colors group cursor-pointer">
-										<div className="flex items-center gap-3 min-w-0">
-											<div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-												<RefreshCw className="w-4 h-4" />
+										className="group bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-2xl p-4 text-left flex flex-col justify-between gap-3 shadow-xs hover:shadow-md transition-all cursor-pointer">
+										<div className="flex items-start justify-between gap-2">
+											<div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0">
+												<RefreshCw className="w-5 h-5" />
 											</div>
-											<div className="min-w-0">
-												<div className="text-[13px] font-bold text-slate-800 group-hover:text-emerald-700 truncate">
-													Làm mới bản đồ
-												</div>
-												<div className="text-[11px] text-slate-500 truncate">
-													Tải lại toàn bộ giao diện & lớp ghim
-												</div>
-											</div>
+											<ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
 										</div>
-										<ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 shrink-0" />
-									</button>
-
-									<div className="h-px bg-slate-100 my-1" />
-
-									<button
-										type="button"
-										onClick={() => {
-											setShowSettings(false);
-											onLogout();
-										}}
-										className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-rose-50 text-rose-600 text-left transition-colors group cursor-pointer">
-										<div className="w-9 h-9 rounded-xl bg-rose-50 group-hover:bg-rose-600 text-rose-600 group-hover:text-white flex items-center justify-center shrink-0 transition-colors">
-											<LogOut className="w-4 h-4" />
-										</div>
-										<div className="min-w-0">
-											<div className="text-[13px] font-bold">
-												Đăng xuất khỏi hệ thống
+										<div>
+											<div className="text-[13px] font-extrabold text-slate-800 group-hover:text-emerald-700 leading-snug">
+												Làm mới bản đồ
 											</div>
-											<div className="text-[11px] text-rose-400">
-												Khóa phiên làm việc hiện tại
+											<div className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+												Tải lại toàn bộ giao diện, lớp ghim &amp; bộ nhớ hiển thị
 											</div>
 										</div>
 									</button>
-								</motion.div>
-							)}
-						</AnimatePresence>
+								</div>
+							</div>
+
+							{/* Footer Modal: Đăng xuất */}
+							<div className="px-6 py-4 bg-white border-t border-slate-200/80 flex items-center justify-between gap-3">
+								<span className="text-[11px] font-semibold text-slate-400">
+									Hệ thống Bản đồ An ninh Trật tự • Vận hành ngoại tuyến nội bộ
+								</span>
+								<button
+									type="button"
+									onClick={() => {
+										setShowSettings(false);
+										onLogout();
+									}}
+									className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600 text-xs font-bold transition-all cursor-pointer shrink-0">
+									<LogOut className="w-4 h-4" />
+									<span>Đăng xuất khỏi hệ thống</span>
+								</button>
+							</div>
+						</motion.div>
 					</div>
-				</div>
-			</header>
+				)}
+			</AnimatePresence>
 
 			{/* THANH HƯỚNG DẪN RÕ RÀNG KHI ĐANG Ở CHẾ ĐỘ THÊM ĐIỂM MỚI */}
 			<AnimatePresence>
@@ -408,7 +447,7 @@ export default function TopBar({
 								<button
 									type="button"
 									onClick={() => {
-										setSelectedCoords([106.1183077, 11.3387817]);
+										setSelectedCoords(null);
 										setShowForm(true);
 										setIsAdding(false);
 									}}

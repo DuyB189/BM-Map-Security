@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
@@ -24,7 +24,12 @@ import { GISData } from "./types";
 import { getSvgPath } from "./utils/icons";
 import { formatDate } from "./utils/date";
 import { getLocalDateStr, getLocalDateTimeStr } from "./utils/dateUtils";
-import { authService, getCategoryDisplayName, UserRole } from "./utils/authService";
+import {
+	ALL_GIS_CATEGORIES,
+	authService,
+	getCategoryDisplayName,
+	UserRole,
+} from "./utils/authService";
 
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
@@ -46,6 +51,7 @@ import OfflineMapModal from "./components/OfflineMapModal";
 import ChangePasswordModal from "./components/ChangePasswordModal";
 import BackupRestoreModal from "./components/BackupRestoreModal";
 import UserManagementModal from "./components/UserManagementModal";
+import AppConfirmModal, { appConfirm } from "./components/AppConfirmModal";
 import Login from "./components/Login";
 import binhminhBoundaryData from "./data/binhminh.json";
 
@@ -173,9 +179,32 @@ export default function App() {
 	});
 	const [activeUserRole, setActiveUserRole] = useState<UserRole>(() => {
 		const saved = sessionStorage.getItem("gis_role");
-		if (saved === "owner" || saved === "admin" || saved === "staff") return saved;
+		if (saved === "owner" || saved === "admin" || saved === "leader" || saved === "staff") {
+			return saved;
+		}
 		return "owner";
 	});
+	const [activeAllowedCategories, setActiveAllowedCategories] = useState<string[]>(() => {
+		try {
+			const raw = sessionStorage.getItem("gis_allowed_categories");
+			if (raw) {
+				const parsed = JSON.parse(raw);
+				if (Array.isArray(parsed)) return parsed;
+			}
+		} catch {}
+		return [...ALL_GIS_CATEGORIES];
+	});
+
+	const effectiveAllowedCategories = useMemo<string[]>(() => {
+		if (activeUserRole !== "staff") return [...ALL_GIS_CATEGORIES];
+		return activeAllowedCategories;
+	}, [activeUserRole, activeAllowedCategories]);
+
+	const canAccessCategory = (category: string): boolean => {
+		if (category === "xa-list") return true;
+		if (activeUserRole !== "staff") return true;
+		return effectiveAllowedCategories.includes(category);
+	};
 
 	const getCurrentActorUsername = () => {
 		return sessionStorage.getItem("gis_user") || activeUsername || "Quản trị viên";
@@ -190,32 +219,58 @@ export default function App() {
 					sessionStorage.removeItem("gis_user");
 					sessionStorage.removeItem("gis_role");
 					sessionStorage.removeItem("gis_fullname");
+					sessionStorage.removeItem("gis_allowed_categories");
 					setIsLoggedIn(false);
 				}
 			})
 			.catch(() => {});
 	}, []);
 
-	const handleLogin = (username: string, role: UserRole = "owner", fullName?: string) => {
+	const handleLogin = (
+		username: string,
+		role: UserRole = "owner",
+		fullName?: string,
+		allowedCategories?: string[],
+	) => {
+		const resolvedCats =
+			role === "staff"
+				? Array.isArray(allowedCategories)
+					? allowedCategories
+					: [...ALL_GIS_CATEGORIES]
+				: [...ALL_GIS_CATEGORIES];
 		setIsLoggedIn(true);
 		setActiveUsername(username);
 		setActiveUserRole(role);
+		setActiveAllowedCategories(resolvedCats);
+		setSelectedDetails(null);
+		setFormData((prev: any) => ({
+			...prev,
+			category: resolvedCats[0] || "vuviec-list",
+		}));
 		sessionStorage.setItem("gis_session", "active");
 		sessionStorage.setItem("gis_user", username);
 		sessionStorage.setItem("gis_role", role);
+		sessionStorage.setItem("gis_allowed_categories", JSON.stringify(resolvedCats));
 		if (fullName) sessionStorage.setItem("gis_fullname", fullName);
 	};
 
-	const handleLogout = () => {
-		if (window.confirm("Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?")) {
+	const handleLogout = async () => {
+		const confirmed = await appConfirm("Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?", {
+			confirmText: "Đăng xuất",
+			cancelText: "Hủy",
+			danger: true,
+		});
+		if (confirmed) {
 			const activeUser = sessionStorage.getItem("gis_user") || undefined;
 			authService.logout(activeUser).catch(() => {});
 			sessionStorage.removeItem("gis_session");
 			sessionStorage.removeItem("gis_user");
 			sessionStorage.removeItem("gis_role");
 			sessionStorage.removeItem("gis_fullname");
+			sessionStorage.removeItem("gis_allowed_categories");
 			localStorage.removeItem("gis_session");
 			localStorage.removeItem("gis_user");
+			setSelectedDetails(null);
 			setIsLoggedIn(false);
 		}
 	};
@@ -223,6 +278,23 @@ export default function App() {
 	const mapContainer = useRef<HTMLDivElement>(null);
 	const map = useRef<maplibregl.Map | null>(null);
 	const [data, setData] = useState<GISData>(INITIAL_DATA);
+
+	// Dữ liệu đã lọc theo quyền danh mục của người dùng đang đăng nhập
+	const scopedData = useMemo<GISData>(() => {
+		if (activeUserRole !== "staff") return data;
+		const allow = new Set(effectiveAllowedCategories);
+		return {
+			...data,
+			menu: data.menu.filter((m) => allow.has(m.target)),
+			vuviec: allow.has("vuviec-list") ? data.vuviec : [],
+			camera: allow.has("camera-list") ? data.camera : [],
+			doituong: allow.has("doituong-list") ? data.doituong : [],
+			coquan: allow.has("coquan-list") ? data.coquan : [],
+			cskd: allow.has("cskd-list") ? data.cskd : [],
+			diemnong: allow.has("diemnong-list") ? data.diemnong : [],
+			tuyenduong: allow.has("tuyenduong-list") ? data.tuyenduong : [],
+		};
+	}, [data, activeUserRole, effectiveAllowedCategories]);
 
 	// Load GIS data from offline database on startup
 	useEffect(() => {
@@ -286,24 +358,36 @@ export default function App() {
 		}
 	}, []);
 
-	// Save data helper for offline persistence
+	// Save data helper for offline persistence (always clone array refs so React memos/lists refresh immediately)
 	const saveOfflineData = (updatedData: GISData) => {
-		setData(updatedData);
+		const freshData: GISData = {
+			...updatedData,
+			menu: [...(updatedData.menu || [])],
+			xaphuong: [...(updatedData.xaphuong || [])],
+			vuviec: [...(updatedData.vuviec || [])],
+			camera: [...(updatedData.camera || [])],
+			doituong: [...(updatedData.doituong || [])],
+			coquan: [...(updatedData.coquan || [])],
+			cskd: [...(updatedData.cskd || [])],
+			diemnong: [...(updatedData.diemnong || [])],
+			tuyenduong: [...(updatedData.tuyenduong || [])],
+		};
+		setData(freshData);
 		// @ts-ignore
 		if (window.ipcRenderer) {
 			// @ts-ignore
 			window.ipcRenderer
-				.invoke("db:save-data", updatedData)
+				.invoke("db:save-data", freshData)
 				.catch((err: any) => console.error("Failed to save offline database:", err));
 		}
 	};
 
-	const handleResetDatabase = () => {
-		if (
-			window.confirm(
-				"Bạn có chắc chắn muốn xóa sạch toàn bộ cơ sở dữ liệu GIS và thiết lập lại ứng dụng về trạng thái trống? Toàn bộ camera, vụ việc, đối tượng, cơ sở kinh doanh tự ghim sẽ bị xóa sạch.",
-			)
-		) {
+	const handleResetDatabase = async () => {
+		const confirmed = await appConfirm(
+			"Bạn có chắc chắn muốn xóa sạch toàn bộ cơ sở dữ liệu GIS và thiết lập lại ứng dụng về trạng thái trống? Toàn bộ camera, vụ việc, đối tượng, cơ sở kinh doanh tự ghim sẽ bị xóa sạch.",
+			{ confirmText: "Xóa sạch", cancelText: "Hủy", danger: true },
+		);
+		if (confirmed) {
 			saveOfflineData(INITIAL_DATA);
 			setSelectedDetails(null);
 			authService.logAction({
@@ -322,7 +406,7 @@ export default function App() {
 	const isAddingRef = useRef(false);
 	const [selectedCoords, setSelectedCoords] = useState<[number, number] | null>(null);
 	const [showForm, setShowForm] = useState(false);
-	const [formData, setFormData] = useState({
+	const [formData, setFormData] = useState<any>({
 		title: "",
 		category: "vuviec-list",
 		description: "",
@@ -337,9 +421,15 @@ export default function App() {
 		sdt_chu: "",
 		cccd: "",
 		sdt: "",
+		hinh_anh: "",
+		nhom_nhan: [],
+		lich_su_hoat_dong: [],
 		mst: "",
 		loai_hinh_kd: "Hộ kinh doanh cá thể",
 		giay_phep: "",
+		giay_phep_antt: {},
+		giay_phep_pccc: {},
+		lich_su_kiem_tra: [],
 		chu_co_so: "",
 		chu_ngaysinh: "",
 		chu_cccd: "",
@@ -412,7 +502,7 @@ export default function App() {
 			case "camera-list":
 				return { iconName: "Cctv", color: "#ea580c" };
 			case "doituong-list":
-				return { iconName: "User", color: "#7c3aed" };
+				return { iconName: "User", color: "#0891b2" };
 			case "coquan-list":
 				return { iconName: "Building2", color: "#475569" };
 			case "cskd-list":
@@ -580,16 +670,12 @@ export default function App() {
 		formDataRef.current = formData;
 	}, [showForm, formData]);
 
-	// Automatically initialize and reset route coordinates when drawing routes
+	// Reset route coordinates when leaving route drawing mode (all points are picked manually by the user)
 	useEffect(() => {
-		if (showForm && formData.category === "tuyenduong-list") {
-			if (selectedCoords && routeCoordinates.length === 0) {
-				setRouteCoordinates([selectedCoords]);
-			}
-		} else if (!isEditingRouteCoords) {
+		if (!(showForm && formData.category === "tuyenduong-list") && !isEditingRouteCoords) {
 			setRouteCoordinates([]);
 		}
-	}, [showForm, formData.category, selectedCoords, isEditingRouteCoords]);
+	}, [showForm, formData.category, isEditingRouteCoords]);
 
 	// Draw temporary route path and vertex circles on the map in real-time
 	useEffect(() => {
@@ -1154,8 +1240,8 @@ export default function App() {
 
 		// 1. Update/Add active Hotspots
 		const currentHotspotSourceIds = new Set<string>();
-		if (!hiddenLayers.includes("diemnong-list")) {
-			data.diemnong.forEach((item) => {
+		if (!hiddenLayers.includes("diemnong-list") && canAccessCategory("diemnong-list")) {
+			scopedData.diemnong.forEach((item) => {
 				const sourceId = `hotspot-${item.id}`;
 				currentHotspotSourceIds.add(sourceId);
 
@@ -1251,8 +1337,8 @@ export default function App() {
 
 		// 2. Update/Add active Routes (Lines)
 		const currentRouteSourceIds = new Set<string>();
-		if (!hiddenLayers.includes("tuyenduong-list")) {
-			data.tuyenduong.forEach((item) => {
+		if (!hiddenLayers.includes("tuyenduong-list") && canAccessCategory("tuyenduong-list")) {
+			scopedData.tuyenduong.forEach((item) => {
 				if (item.type !== "line") return;
 				const sourceId = `route-${item.id}`;
 				currentRouteSourceIds.add(sourceId);
@@ -1328,7 +1414,7 @@ export default function App() {
 				});
 			}
 		}
-	}, [data, hiddenLayers, isMapReady]);
+	}, [scopedData, hiddenLayers, isMapReady]);
 
 	const createMarker = (
 		originalLngLat: [number, number],
@@ -1470,9 +1556,9 @@ export default function App() {
 			category: string;
 		}[] = [];
 
-		// Map through categories and collect marker definitions
-		if (!hiddenLayers.includes("vuviec-list")) {
-			data.vuviec.forEach((item) => {
+		// Map through categories and collect marker definitions (scoped to user's permitted categories)
+		if (!hiddenLayers.includes("vuviec-list") && canAccessCategory("vuviec-list")) {
+			scopedData.vuviec.forEach((item) => {
 				collected.push({
 					lngLat: [item.lng, item.lat],
 					iconName: "AlertTriangle",
@@ -1493,8 +1579,8 @@ export default function App() {
 			});
 		}
 
-		if (!hiddenLayers.includes("camera-list")) {
-			data.camera.forEach((item) => {
+		if (!hiddenLayers.includes("camera-list") && canAccessCategory("camera-list")) {
+			scopedData.camera.forEach((item) => {
 				collected.push({
 					lngLat: [item.lng, item.lat],
 					iconName: "Cctv",
@@ -1514,12 +1600,12 @@ export default function App() {
 			});
 		}
 
-		if (!hiddenLayers.includes("doituong-list")) {
-			data.doituong.forEach((item) => {
+		if (!hiddenLayers.includes("doituong-list") && canAccessCategory("doituong-list")) {
+			scopedData.doituong.forEach((item) => {
 				collected.push({
 					lngLat: [item.lng, item.lat],
 					iconName: "User",
-					color: "#7c3aed",
+					color: "#0891b2",
 					title: item.hoten,
 					details: {
 						"Loại đối tượng": item.loai || "Chưa phân loại",
@@ -1535,8 +1621,8 @@ export default function App() {
 			});
 		}
 
-		if (!hiddenLayers.includes("coquan-list")) {
-			data.coquan.forEach((item) => {
+		if (!hiddenLayers.includes("coquan-list") && canAccessCategory("coquan-list")) {
+			scopedData.coquan.forEach((item) => {
 				collected.push({
 					lngLat: [item.lng, item.lat],
 					iconName: "Building2",
@@ -1553,8 +1639,8 @@ export default function App() {
 			});
 		}
 
-		if (!hiddenLayers.includes("cskd-list")) {
-			data.cskd.forEach((item) => {
+		if (!hiddenLayers.includes("cskd-list") && canAccessCategory("cskd-list")) {
+			scopedData.cskd.forEach((item) => {
 				collected.push({
 					lngLat: [item.lng, item.lat],
 					iconName: "Store",
@@ -1574,8 +1660,8 @@ export default function App() {
 			});
 		}
 
-		if (!hiddenLayers.includes("diemnong-list")) {
-			data.diemnong.forEach((item) => {
+		if (!hiddenLayers.includes("diemnong-list") && canAccessCategory("diemnong-list")) {
+			scopedData.diemnong.forEach((item) => {
 				collected.push({
 					lngLat: [item.lng, item.lat],
 					iconName: "Flame",
@@ -1599,8 +1685,8 @@ export default function App() {
 		}
 
 		// Add point routes
-		if (!hiddenLayers.includes("tuyenduong-list")) {
-			data.tuyenduong.forEach((item) => {
+		if (!hiddenLayers.includes("tuyenduong-list") && canAccessCategory("tuyenduong-list")) {
+			scopedData.tuyenduong.forEach((item) => {
 				if (item.type === "point" || !item.type) {
 					const color =
 						item.mucdo === "Rất cao"
@@ -1670,15 +1756,29 @@ export default function App() {
 
 	// CRUD Actions
 	const handleAdd = () => {
-		if (!selectedCoords) return;
+		if (!canAccessCategory(formData.category)) {
+			alert("Tài khoản của bạn không được phân quyền thao tác trên danh mục này.");
+			return;
+		}
+		const isRouteAdd = formData.category === "tuyenduong-list";
+		const effectiveCoords = isRouteAdd
+			? routeCoordinates?.[0] || selectedCoords
+			: selectedCoords;
+		if (
+			!effectiveCoords ||
+			!Number.isFinite(effectiveCoords[0]) ||
+			!Number.isFinite(effectiveCoords[1])
+		) {
+			return;
+		}
 
 		const nowLocalStr = getLocalDateTimeStr(); // YYYY-MM-DDTHH:mm (Local Time)
 		const currentDateStr = getLocalDateStr(); // YYYY-MM-DD (Local Time)
 		const actorUser = getCurrentActorUsername();
 
 		const baseItem = {
-			lng: selectedCoords[0],
-			lat: selectedCoords[1],
+			lng: effectiveCoords[0],
+			lat: effectiveCoords[1],
 			id: Date.now(),
 			ngay_tao: currentDateStr,
 			nguoi_tao: actorUser,
@@ -1721,6 +1821,11 @@ export default function App() {
 					hoten: formData.title,
 					cccd: formData.cccd || "",
 					loai: formData.loai || "",
+					nhom_nhan: Array.isArray(formData.nhom_nhan) ? formData.nhom_nhan : [],
+					hinh_anh: formData.hinh_anh || "",
+					lich_su_hoat_dong: Array.isArray(formData.lich_su_hoat_dong)
+						? formData.lich_su_hoat_dong
+						: [],
 					sdt: formData.sdt || "",
 					mota: formData.description || "",
 					diachi: formData.diachi || "",
@@ -1743,6 +1848,11 @@ export default function App() {
 					mst: formData.mst || "",
 					loai_hinh_kd: formData.loai_hinh_kd || "Hộ kinh doanh cá thể",
 					giay_phep: formData.giay_phep || "",
+					giay_phep_antt: formData.giay_phep_antt || undefined,
+					giay_phep_pccc: formData.giay_phep_pccc || undefined,
+					lich_su_kiem_tra: Array.isArray(formData.lich_su_kiem_tra)
+						? formData.lich_su_kiem_tra
+						: [],
 					chu_co_so: formData.chu_co_so || "",
 					chu_ngaysinh: formData.chu_ngaysinh || "",
 					chu_cccd: formData.chu_cccd || "",
@@ -1777,6 +1887,8 @@ export default function App() {
 						loai: formData.loai,
 						mucdo: formData.mucdo,
 						type: "line",
+						lng: routeCoordinates[0][0],
+						lat: routeCoordinates[0][1],
 						coordinates: routeCoordinates,
 					};
 				} else {
@@ -1791,15 +1903,15 @@ export default function App() {
 				break;
 		}
 
-		const newData = { ...data };
-		if (formData.category === "vuviec-list") newData.vuviec.push(newItem);
-		else if (formData.category === "xa-list") newData.xaphuong.push(newItem);
-		else if (formData.category === "camera-list") newData.camera.push(newItem);
-		else if (formData.category === "doituong-list") newData.doituong.push(newItem);
-		else if (formData.category === "coquan-list") newData.coquan.push(newItem);
-		else if (formData.category === "cskd-list") newData.cskd.push(newItem);
-		else if (formData.category === "diemnong-list") newData.diemnong.push(newItem);
-		else if (formData.category === "tuyenduong-list") newData.tuyenduong.push(newItem);
+		const newData: GISData = { ...data };
+		if (formData.category === "vuviec-list") newData.vuviec = [...data.vuviec, newItem];
+		else if (formData.category === "xa-list") newData.xaphuong = [...data.xaphuong, newItem];
+		else if (formData.category === "camera-list") newData.camera = [...data.camera, newItem];
+		else if (formData.category === "doituong-list") newData.doituong = [...data.doituong, newItem];
+		else if (formData.category === "coquan-list") newData.coquan = [...data.coquan, newItem];
+		else if (formData.category === "cskd-list") newData.cskd = [...data.cskd, newItem];
+		else if (formData.category === "diemnong-list") newData.diemnong = [...data.diemnong, newItem];
+		else if (formData.category === "tuyenduong-list") newData.tuyenduong = [...data.tuyenduong, newItem];
 
 		saveOfflineData(newData);
 		const catName = getCategoryDisplayName(formData.category);
@@ -1835,9 +1947,15 @@ export default function App() {
 			sdt_chu: "",
 			cccd: "",
 			sdt: "",
+			hinh_anh: "",
+			nhom_nhan: [],
+			lich_su_hoat_dong: [],
 			mst: "",
 			loai_hinh_kd: "Hộ kinh doanh cá thể",
 			giay_phep: "",
+			giay_phep_antt: {},
+			giay_phep_pccc: {},
+			lich_su_kiem_tra: [],
 			chu_co_so: "",
 			chu_ngaysinh: "",
 			chu_cccd: "",
@@ -1960,9 +2078,10 @@ export default function App() {
 			nguoi_cap_nhat: actorUser,
 			ngay_cap_nhat: getLocalDateTimeStr(),
 		};
-		const newData = { ...data };
-		newData.doituong.push(stampedDt);
-		setData(newData);
+		const newData: GISData = {
+			...data,
+			doituong: [...data.doituong, stampedDt],
+		};
 		saveOfflineData(newData);
 		const dtName = getEntityTitle(stampedDt);
 		authService.logAction({
@@ -1975,6 +2094,7 @@ export default function App() {
 	};
 
 	const handleViewDetails = (id: string | number, category: string) => {
+		if (!canAccessCategory(category)) return;
 		let foundItem = null;
 		const targetIdStr = id ? String(id) : "";
 
@@ -2425,48 +2545,69 @@ export default function App() {
 					id: x.ten_xa,
 				}));
 			case "vuviec-list":
-				return data.vuviec.map((v) => ({
+				return scopedData.vuviec.map((v) => ({
 					label: v.loai,
 					lng: v.lng,
 					lat: v.lat,
 					category: type,
 					id: v.id || v.loai,
-					extra: v.mota,
+					area: v.diachi || "",
+					extra: `${v.mota || ""} ${v.diachi || ""} ${v.ketqua || ""}`,
 					trangthai: v.trangthai,
 					thoigian: v.thoigian,
 					groupId: v.groupId,
 				}));
 			case "camera-list":
-				return data.camera.map((c) => ({
+				return scopedData.camera.map((c) => ({
 					label: c.ten,
 					lng: c.lng,
 					lat: c.lat,
 					category: type,
 					id: c.id || c.ten,
 					loai: c.chu_camera,
-					extra: `${c.diachi || ""} ${c.sdt_chu || ""}`,
+					area: c.diachi || "",
+					extra: `${c.diachi || ""} ${c.sdt_chu || ""} ${c.description || ""}`,
 				}));
 			case "doituong-list":
-				return data.doituong.map((d) => ({
-					label: d.hoten,
-					lng: d.lng,
-					lat: d.lat,
-					category: type,
-					id: d.id || d.hoten,
-					loai: d.loai,
-					extra: `${d.cccd || ""} ${d.sdt || ""} ${d.diachi || ""}`,
-				}));
+				return scopedData.doituong.map((d) => {
+					const linkedIncidentsText = scopedData.vuviec
+						.filter(
+							(vv) =>
+								Array.isArray(vv.suspectIds) &&
+								vv.suspectIds.map(String).includes(String(d.id)),
+						)
+						.map((vv) => `${vv.loai || ""} ${vv.groupId || ""} ${vv.diachi || ""}`)
+						.join(" ");
+					const tagsText = Array.isArray(d.nhom_nhan) ? d.nhom_nhan.join(" ") : "";
+					const historyText = Array.isArray(d.lich_su_hoat_dong)
+						? d.lich_su_hoat_dong
+								.map((h) => `${h.loai_su_kien} ${h.noi_dung}`)
+								.join(" ")
+						: "";
+					return {
+						label: d.hoten,
+						lng: d.lng,
+						lat: d.lat,
+						category: type,
+						id: d.id || d.hoten,
+						loai: d.loai,
+						area: d.diachi || "",
+						extra: `${d.cccd || ""} ${d.sdt || ""} ${d.diachi || ""} ${tagsText} ${historyText} ${linkedIncidentsText}`,
+					};
+				});
 			case "coquan-list":
-				return data.coquan.map((c) => ({
+				return scopedData.coquan.map((c) => ({
 					label: c.ten,
 					lng: c.lng,
 					lat: c.lat,
 					category: type,
 					id: c.ten,
 					loai: c.loai,
+					area: c.xaphuong || "",
+					extra: c.xaphuong || "",
 				}));
 			case "cskd-list":
-				return data.cskd.map((c) => ({
+				return scopedData.cskd.map((c) => ({
 					label: c.ten,
 					lng: c.lng,
 					lat: c.lat,
@@ -2474,9 +2615,11 @@ export default function App() {
 					id: c.ten,
 					loai: c.loai,
 					trangthai: c.trangthai,
+					area: c.chu_diachi || "",
+					extra: `${c.mst || ""} ${c.chu_co_so || ""} ${c.chu_diachi || ""} ${c.giay_phep || ""}`,
 				}));
 			case "diemnong-list":
-				return data.diemnong.map((d) => ({
+				return scopedData.diemnong.map((d) => ({
 					label: d.ten,
 					lng: d.lng,
 					lat: d.lat,
@@ -2484,14 +2627,18 @@ export default function App() {
 					id: d.id,
 					loai: d.loai,
 					mucdo: d.mucdo,
+					area: d.xaphuong || "",
+					extra: `${d.xaphuong || ""} ${d.mota || ""}`,
 				}));
 			case "tuyenduong-list":
-				return data.tuyenduong.map((t) => ({
+				return scopedData.tuyenduong.map((t) => ({
 					label: t.ten,
 					lng: t.lng || (t.coordinates?.[0]?.[0] ?? 0),
 					lat: t.lat || (t.coordinates?.[0]?.[1] ?? 0),
 					category: type,
 					id: t.id || t.ten,
+					loai: t.loai,
+					area: "",
 				}));
 			default:
 				return [];
@@ -2645,7 +2792,7 @@ export default function App() {
 				isMenuOpen={isMenuOpen}
 				searchQuery={searchQuery}
 				setSearchQuery={setSearchQuery}
-				data={data}
+				data={scopedData}
 				hiddenLayers={hiddenLayers}
 				setHiddenLayers={setHiddenLayers}
 				getFilteredData={getFilteredData}
@@ -2697,31 +2844,38 @@ export default function App() {
 				setShowForm={setShowForm}
 				formData={formData}
 				setFormData={setFormData}
-				menu={data.menu}
+				menu={scopedData.menu}
 				selectedCoords={selectedCoords}
 				setSelectedCoords={setSelectedCoords}
+				onPickOnMap={() => {
+					setShowForm(false);
+					setIsAdding(true);
+				}}
 				handleAdd={handleAdd}
 				routeCoordinates={routeCoordinates}
 				setRouteCoordinates={setRouteCoordinates}
-				doituongList={data.doituong}
+				doituongList={scopedData.doituong}
 				onAddNewDoiTuong={handleAddNewDoiTuongFromVuViec}
 			/>
 
 			<DetailsModal
 				details={selectedDetails}
 				onClose={() => setSelectedDetails(null)}
-				vuviecList={data.vuviec}
-				doituongList={data.doituong}
+				vuviecList={scopedData.vuviec}
+				doituongList={scopedData.doituong}
+				cameraList={scopedData.camera}
 			/>
 
 			<DataCatalogModal
 				show={showCatalogModal}
 				initialMenuId={activeMenu}
 				onClose={() => setShowCatalogModal(false)}
-				data={data}
+				data={scopedData}
+				allowedCategories={effectiveAllowedCategories}
 				hiddenLayers={hiddenLayers}
 				setHiddenLayers={setHiddenLayers}
 				suspendOverlay={Boolean(
+					isAdding ||
 					pickingLocationFor ||
 					isEditingRouteCoords ||
 					(showForm && formData.category === "tuyenduong-list"),
@@ -2749,9 +2903,9 @@ export default function App() {
 					);
 				}}
 				onOpenAddForCategory={(category) => {
-					setSelectedCoords([106.1183077, 11.3387817]);
+					setSelectedCoords(null);
 					setRouteCoordinates([]);
-					setFormData((prev) => ({
+					setFormData((prev: any) => ({
 						...prev,
 						category,
 						thoigian: getLocalDateTimeStr(),
@@ -2769,7 +2923,7 @@ export default function App() {
 			<StatsDashboardModal
 				show={showStatsModal}
 				onClose={() => setShowStatsModal(false)}
-				data={data}
+				data={scopedData}
 				onSelectCategory={(category) => {
 					setActiveMenu(category);
 					setShowCatalogModal(true);
@@ -2869,8 +3023,11 @@ export default function App() {
 				showImport={showImportModal}
 				setShowImport={setShowImportModal}
 				activeMenu={activeMenu}
+				allowedCategories={effectiveAllowedCategories}
 				handleImport={handleImportExcelData}
 			/>
+
+			<AppConfirmModal />
 
 			<MapControls
 				zoomIn={() => map.current?.zoomIn()}

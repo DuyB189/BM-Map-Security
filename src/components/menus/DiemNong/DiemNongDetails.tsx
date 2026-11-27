@@ -142,7 +142,7 @@ export default function DiemNongDetails({ details, onClose }: Props) {
           {(details.radius !== undefined && details.radius !== null && details.radius !== '') && (
             <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-white text-purple-650 border border-slate-200 rounded-xl shrink-0 shadow-sm">
+                <div className="p-2.5 bg-white text-cyan-600 border border-slate-200 rounded-xl shrink-0 shadow-sm">
                   <Target className="w-4 h-4" />
                 </div>
                 <div className="flex-1 overflow-hidden">

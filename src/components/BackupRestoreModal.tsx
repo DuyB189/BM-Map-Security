@@ -18,6 +18,7 @@ import {
 	History,
 } from "lucide-react";
 import { GISData } from "../types";
+import { appConfirm } from "./AppConfirmModal";
 
 interface BackupRestoreModalProps {
 	show: boolean;
@@ -247,7 +248,7 @@ export default function BackupRestoreModal({
 				? `Xác nhận KHÔI PHỤC NGUYÊN TRẠNG từ tệp "${inspectedPkg.fileName}"?\n\n(Phần mềm sẽ tự giữ lại 1 bản dự phòng dữ liệu hiện tại của máy trước khi thực hiện).`
 				: `Xác nhận GỘP THÊM dữ liệu từ tệp "${inspectedPkg.fileName}" vào dữ liệu hiện có trên máy?`;
 
-		if (!window.confirm(confirmMsg)) return;
+		if (!(await appConfirm(confirmMsg, { confirmText: "Khôi phục", cancelText: "Hủy" }))) return;
 
 		const ipc = (window as any).ipcRenderer;
 		if (!ipc) return;
@@ -307,11 +308,11 @@ export default function BackupRestoreModal({
 	};
 
 	const handleRestoreLocalSnapshot = async (snap: SnapshotItem) => {
-		if (
-			!window.confirm(
-				`Bạn muốn quay lại dữ liệu thời điểm "${formatDateTimeVi(snap.createdAt)}" (${snap.totalRecords} bản ghi)?\n\nDữ liệu hiện tại vẫn sẽ được giữ lại tự động phòng khi cần đổi ý.`,
-			)
-		) {
+		const ok = await appConfirm(
+			`Bạn muốn quay lại dữ liệu thời điểm "${formatDateTimeVi(snap.createdAt)}" (${snap.totalRecords} bản ghi)?\n\nDữ liệu hiện tại vẫn sẽ được giữ lại tự động phòng khi cần đổi ý.`,
+			{ confirmText: "Quay lại mốc này", cancelText: "Hủy" },
+		);
+		if (!ok) {
 			return;
 		}
 

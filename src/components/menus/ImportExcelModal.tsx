@@ -10,6 +10,7 @@ interface ImportExcelModalProps {
 	setShowImport: (val: boolean) => void;
 	activeMenu: string | null;
 	handleImport: (category: string, data: any[]) => void;
+	allowedCategories?: string[];
 }
 
 const IMPORT_CATEGORIES = [
@@ -57,8 +58,16 @@ export default function ImportExcelModal({
 	setShowImport,
 	activeMenu,
 	handleImport,
+	allowedCategories,
 }: ImportExcelModalProps) {
-	const [category, setCategory] = useState("vuviec-list");
+	const visibleImportCategories =
+		Array.isArray(allowedCategories) && allowedCategories.length > 0
+			? IMPORT_CATEGORIES.filter((c) => allowedCategories.includes(c.value))
+			: IMPORT_CATEGORIES;
+
+	const [category, setCategory] = useState(
+		visibleImportCategories[0]?.value || "vuviec-list",
+	);
 	const [dragActive, setDragActive] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [fileName, setFileName] = useState<string | null>(null);
@@ -70,12 +79,14 @@ export default function ImportExcelModal({
 			setErrorMessage(null);
 			setFileName(null);
 			setPendingData(null);
-			const matched = IMPORT_CATEGORIES.find(
+			const matched = visibleImportCategories.find(
 				(c) => c.menuId === activeMenu || c.value === activeMenu,
 			);
-			setCategory(matched ? matched.value : "vuviec-list");
+			setCategory(
+				matched ? matched.value : visibleImportCategories[0]?.value || "vuviec-list",
+			);
 		}
-	}, [activeMenu, showImport]);
+	}, [activeMenu, showImport, allowedCategories]);
 
 	if (!showImport) return null;
 
@@ -593,7 +604,7 @@ export default function ImportExcelModal({
 									setErrorMessage(null);
 								}}
 								className="w-full bg-slate-50 border border-slate-200 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-[13px] font-bold text-slate-800 outline-none cursor-pointer">
-								{IMPORT_CATEGORIES.map((c) => (
+								{visibleImportCategories.map((c) => (
 									<option key={c.value} value={c.value}>
 										{c.label}
 									</option>

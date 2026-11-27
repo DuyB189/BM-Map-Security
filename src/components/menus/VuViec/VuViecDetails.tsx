@@ -1,15 +1,43 @@
-import React from 'react';
-import { X, MapPin, Calendar, CheckSquare, AlignLeft, Link, Compass, Edit2, ShieldAlert, User, Shield } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { X, MapPin, Calendar, CheckSquare, AlignLeft, Link, Compass, Edit2, ShieldAlert, User, Cctv, Phone, Check, Clipboard } from 'lucide-react';
 import { formatDate } from '../../../utils/date';
+import { calculateDistanceMeters, formatDistanceMeters } from '../../../utils/gisHelpers';
 
 interface Props {
   details: any;
   onClose: () => void;
   vuviecList?: any[];
   doituongList?: any[];
+  cameraList?: any[];
 }
 
-export default function VuViecDetails({ details, onClose, vuviecList, doituongList = [] }: Props) {
+export default function VuViecDetails({ details, onClose, vuviecList, doituongList = [], cameraList = [] }: Props) {
+  const [cameraRadius, setCameraRadius] = useState<number>(300);
+  const [copiedCamPhone, setCopiedCamPhone] = useState<string | null>(null);
+
+  const nearbyCameras = useMemo(() => {
+    const incLat = Number(details.lat ?? details.coordinates?.[0]?.[1]);
+    const incLng = Number(details.lng ?? details.coordinates?.[0]?.[0]);
+    if (!Number.isFinite(incLat) || !Number.isFinite(incLng)) return [];
+
+    return (cameraList || [])
+      .map((cam: any) => {
+        const cLat = Number(cam.lat);
+        const cLng = Number(cam.lng);
+        if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) return null;
+        const distance = calculateDistanceMeters(incLat, incLng, cLat, cLng);
+        return { ...cam, _distance: distance };
+      })
+      .filter((c: any) => c && c._distance <= cameraRadius)
+      .sort((a: any, b: any) => a._distance - b._distance);
+  }, [cameraList, details.lat, details.lng, details.coordinates, cameraRadius]);
+
+  const handleCopyCamPhone = (e: React.MouseEvent, phone: string, camKey: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(phone);
+    setCopiedCamPhone(camKey);
+    setTimeout(() => setCopiedCamPhone(null), 2000);
+  };
   const relatedIncidents = (vuviecList || []).filter((vv: any) =>
     vv.groupId &&
     vv.groupId === details.groupId &&
@@ -159,13 +187,13 @@ export default function VuViecDetails({ details, onClose, vuviecList, doituongLi
           {details.groupId && (
             <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-white text-purple-650 border border-slate-200 rounded-xl shrink-0 shadow-sm">
+                <div className="p-2.5 bg-white text-cyan-600 border border-slate-200 rounded-xl shrink-0 shadow-sm">
                   <Link className="w-4 h-4" />
                 </div>
                 <div className="flex-1 overflow-hidden">
                   <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Nhóm vụ việc / Liên kết hồ sơ</span>
                   <div className="flex items-center gap-1.5 mt-1.5">
-                    <span className="font-mono text-xs font-bold text-purple-700 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-sm">
+                    <span className="font-mono text-xs font-bold text-cyan-700 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-sm">
                       {details.groupId}
                     </span>
                   </div>
@@ -226,6 +254,80 @@ export default function VuViecDetails({ details, onClose, vuviecList, doituongLi
               </div>
             </div>
           )}
+
+          {/* Nearby Cameras Investigation Card (1.2.d) */}
+          <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm border border-orange-100/80">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-orange-50 text-orange-600 border border-orange-200 rounded-xl shrink-0 shadow-sm">
+                <Cctv className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] uppercase font-extrabold text-orange-700 tracking-wider">
+                    Camera quanh vụ việc ({nearbyCameras.length})
+                  </span>
+                  <select
+                    value={cameraRadius}
+                    onChange={(e) => setCameraRadius(Number(e.target.value))}
+                    className="bg-orange-50 border border-orange-200 rounded-lg px-2 py-0.5 text-[10px] font-bold text-orange-700 outline-none cursor-pointer"
+                  >
+                    <option value={100}>Bán kính 100m</option>
+                    <option value={200}>Bán kính 200m</option>
+                    <option value={300}>Bán kính 300m</option>
+                    <option value={500}>Bán kính 500m</option>
+                    <option value={1000}>Bán kính 1 km</option>
+                    <option value={2000}>Bán kính 2 km</option>
+                  </select>
+                </div>
+
+                {nearbyCameras.length > 0 ? (
+                  <div className="mt-2.5 space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-0.5">
+                    {nearbyCameras.map((cam: any, idx: number) => {
+                      const camKey = String(cam.id || cam.ten || idx);
+                      return (
+                        <div
+                          key={camKey}
+                          onClick={() => {
+                            // @ts-ignore
+                            window.handleViewDetailsGis?.(cam.id || cam.ten, 'camera-list');
+                          }}
+                          className="p-2.5 rounded-xl bg-orange-50/40 hover:bg-orange-50 border border-orange-100 hover:border-orange-300 transition-all cursor-pointer space-y-1"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-slate-800 truncate">{cam.ten}</span>
+                            <span className="px-1.5 py-0.5 rounded-md bg-orange-600 text-white text-[10px] font-mono font-extrabold shrink-0">
+                              {formatDistanceMeters(cam._distance)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                            <span className="truncate">
+                              {cam.chu_camera ? `Chủ: ${cam.chu_camera}` : cam.diachi || 'Chưa rõ chủ sở hữu'}
+                            </span>
+                            {cam.sdt_chu && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyCamPhone(e, cam.sdt_chu, camKey)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-orange-200 text-orange-700 font-mono font-bold hover:bg-orange-100 shrink-0 cursor-pointer"
+                                title="Sao chép SĐT chủ camera"
+                              >
+                                <Phone className="w-2.5 h-2.5" />
+                                <span>{cam.sdt_chu}</span>
+                                {copiedCamPhone === camKey ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Clipboard className="w-2.5 h-2.5" />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 mt-2 italic">
+                    Không có camera nào trong bán kính {formatDistanceMeters(cameraRadius)} quanh hiện trường.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
 
           {/* Coordinates Card */}
           <div className="group p-4 bg-white rounded-2xl hover:shadow-md hover:shadow-slate-100 transition-all duration-300 shadow-sm">

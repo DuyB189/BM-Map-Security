@@ -17,7 +17,12 @@ import { motion } from "motion/react";
 import { authService, UserRole } from "../utils/authService";
 
 interface LoginProps {
-	onLogin: (username: string, role?: UserRole, fullName?: string) => void;
+	onLogin: (
+		username: string,
+		role?: UserRole,
+		fullName?: string,
+		allowedCategories?: string[],
+	) => void;
 }
 
 type AuthViewMode = "loading" | "setup" | "recovery-receipt" | "login" | "locked" | "unlock";
@@ -180,6 +185,7 @@ export default function Login({ onLogin }: LoginProps) {
 
 			if (res.success && res.username) {
 				onLogin(res.username, res.role || "owner", res.fullName);
+				onLogin(res.username, res.role || "owner", res.fullName, res.allowedCategories);
 				return;
 			}
 
@@ -194,8 +200,7 @@ export default function Login({ onLogin }: LoginProps) {
 				setPassword("");
 				setMode("locked");
 				setError(
-					res.error ||
-						"Hệ thống đã bị khóa bảo vệ do nhập sai mật khẩu 5 lần liên tiếp.",
+					res.error || "Hệ thống đã bị khóa bảo vệ do nhập sai mật khẩu 5 lần liên tiếp.",
 				);
 			} else {
 				setError(res.error || "Tài khoản hoặc mật khẩu không chính xác.");
@@ -347,8 +352,8 @@ export default function Login({ onLogin }: LoginProps) {
 				{mode === "setup" && (
 					<form onSubmit={handleSetupSubmit} className="w-full space-y-4">
 						<div className="p-3 bg-sky-50 border border-sky-100 rounded-xl text-[11px] text-sky-800 font-semibold leading-relaxed">
-							Thiết bị chưa có tài khoản quản trị. Vui lòng thiết lập tài khoản duy nhất
-							cho máy trạm ngoại tuyến này.
+							Thiết bị chưa có tài khoản quản trị. Vui lòng thiết lập tài khoản duy
+							nhất cho máy trạm ngoại tuyến này.
 						</div>
 
 						<div className="space-y-1.5 text-left">
@@ -456,9 +461,9 @@ export default function Login({ onLogin }: LoginProps) {
 								<span>Lưu giữ Mã Mở Khóa Chủ Quản</span>
 							</div>
 							<p className="text-[11px] font-medium">
-								Máy tính hoạt động cô lập hoàn toàn. Hãy ghi chính xác mã dưới đây vào{" "}
-								<b>Sổ mật / Biên bản bàn giao</b> để mở khóa khi nhập sai mật khẩu quá 5
-								lần.
+								Máy tính hoạt động cô lập hoàn toàn. Hãy ghi chính xác mã dưới đây
+								vào <b>Sổ mật / Biên bản bàn giao</b> để mở khóa khi nhập sai mật
+								khẩu quá 5 lần.
 							</p>
 						</div>
 
@@ -736,7 +741,9 @@ export default function Login({ onLogin }: LoginProps) {
 											{copiedUsername ? (
 												<>
 													<Check className="w-3.5 h-3.5 text-emerald-600" />
-													<span className="text-emerald-700">Đã chép</span>
+													<span className="text-emerald-700">
+														Đã chép
+													</span>
 												</>
 											) : (
 												<>
@@ -759,7 +766,9 @@ export default function Login({ onLogin }: LoginProps) {
 														<button
 															type="button"
 															onClick={() =>
-																setShowRecoveredPass(!showRecoveredPass)
+																setShowRecoveredPass(
+																	!showRecoveredPass,
+																)
 															}
 															className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-200 flex items-center gap-1 cursor-pointer">
 															{showRecoveredPass ? (
@@ -809,15 +818,15 @@ export default function Login({ onLogin }: LoginProps) {
 														: "•".repeat(
 																Math.max(
 																	8,
-																	verifiedUnlockInfo.recoveredPassword
-																		.length,
+																	verifiedUnlockInfo
+																		.recoveredPassword.length,
 																),
 															)}
 												</div>
 											) : (
 												<p className="text-[11px] text-slate-300 font-medium">
-													Tài khoản này được tạo trước khi bật lưu trữ khôi phục.
-													Vui lòng đặt mật khẩu mới bên dưới.
+													Tài khoản này được tạo trước khi bật lưu trữ
+													khôi phục. Vui lòng đặt mật khẩu mới bên dưới.
 												</p>
 											)}
 										</div>
@@ -841,7 +850,9 @@ export default function Login({ onLogin }: LoginProps) {
 											<button
 												type="button"
 												onClick={() =>
-													setWantResetNewPassInMaster(!wantResetNewPassInMaster)
+													setWantResetNewPassInMaster(
+														!wantResetNewPassInMaster,
+													)
 												}
 												className="w-full py-2 text-[11px] font-bold text-sky-700 hover:text-sky-800 text-center cursor-pointer">
 												{wantResetNewPassInMaster
@@ -896,7 +907,9 @@ export default function Login({ onLogin }: LoginProps) {
 												<input
 													type={showConfirmPassword ? "text" : "password"}
 													value={confirmPassword}
-													onChange={(e) => setConfirmPassword(e.target.value)}
+													onChange={(e) =>
+														setConfirmPassword(e.target.value)
+													}
 													placeholder="Nhập lại mật khẩu mới..."
 													disabled={isLoading}
 													className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 focus:border-sky-500 rounded-xl text-xs font-bold text-slate-800 outline-none transition-all"
@@ -920,12 +933,14 @@ export default function Login({ onLogin }: LoginProps) {
 											<input
 												type="checkbox"
 												checked={rotateRecoveryKey}
-												onChange={(e) => setRotateRecoveryKey(e.target.checked)}
+												onChange={(e) =>
+													setRotateRecoveryKey(e.target.checked)
+												}
 												className="w-4 h-4 accent-sky-600 rounded cursor-pointer"
 											/>
 											<span className="text-[11px] font-semibold text-slate-600">
-												Đồng thời cấp mới Mã Mở Khóa Chủ Quản cho đơn vị (hủy mã
-												Chủ Quản cũ)
+												Đồng thời cấp mới Mã Mở Khóa Chủ Quản cho đơn vị
+												(hủy mã Chủ Quản cũ)
 											</span>
 										</label>
 

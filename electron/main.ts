@@ -452,10 +452,27 @@ interface StoredAccount {
 	updatedAt: string;
 }
 
+const ALL_GIS_CATEGORIES = [
+	"vuviec-list",
+	"camera-list",
+	"doituong-list",
+	"coquan-list",
+	"cskd-list",
+	"diemnong-list",
+	"tuyenduong-list",
+] as const;
+
+const sanitizeAllowedCategories = (raw?: unknown): string[] => {
+	if (!Array.isArray(raw)) return [...ALL_GIS_CATEGORIES];
+	const valid = new Set<string>(ALL_GIS_CATEGORIES);
+	return Array.from(new Set(raw.map(String).filter((c) => valid.has(c))));
+};
+
 interface StoredSubAccount {
 	username: string;
 	fullName: string;
-	role: "admin" | "staff";
+	role: "admin" | "leader" | "staff";
+	allowedCategories?: string[];
 	passwordSalt: string;
 	passwordHash: string;
 	isActive: boolean;
@@ -515,7 +532,7 @@ interface EncryptedVaultEnvelope {
 }
 
 let currentSessionUser: string | null = null;
-let currentSessionRole: "owner" | "admin" | "staff" | null = null;
+let currentSessionRole: "owner" | "admin" | "leader" | "staff" | null = null;
 let cachedMachineKey: Buffer | null = null;
 
 const getAuthVaultPath = () => {
@@ -1012,6 +1029,10 @@ ipcMain.handle("auth:login", (_event, payload: { username: string; password: str
 			username: matchedSubUser.username,
 			fullName: matchedSubUser.fullName,
 			role: matchedSubUser.role,
+			allowedCategories:
+				matchedSubUser.role === "staff"
+					? sanitizeAllowedCategories(matchedSubUser.allowedCategories)
+					: [...ALL_GIS_CATEGORIES],
 		};
 	}
 
@@ -1380,7 +1401,7 @@ ipcMain.handle("auth:logout", (_event, payload?: { username?: string }) => {
 const resolveActorPermissions = (
 	vault: AuthVaultData,
 	actorUsername?: string,
-): { username: string; role: "owner" | "admin" | "staff" } | null => {
+): { username: string; role: "owner" | "admin" | "leader" | "staff" } | null => {
 	if (!vault.account) return null;
 	const name = (actorUsername || currentSessionUser || "").trim();
 	if (!name) return null;
@@ -1406,6 +1427,7 @@ ipcMain.handle("auth:list-users", () => {
 		username: vault.account.username,
 		fullName: vault.account.fullName || "Chủ quản hệ thống",
 		role: "owner" as const,
+		allowedCategories: [...ALL_GIS_CATEGORIES],
 		isOwner: true,
 		isActive: true,
 		isLocked: vault.account.isLocked,
@@ -1419,6 +1441,10 @@ ipcMain.handle("auth:list-users", () => {
 		username: u.username,
 		fullName: u.fullName,
 		role: u.role,
+		allowedCategories:
+			u.role === "staff"
+				? sanitizeAllowedCategories(u.allowedCategories)
+				: [...ALL_GIS_CATEGORIES],
 		isOwner: false,
 		isActive: u.isActive,
 		isLocked: u.isLocked,
@@ -1442,7 +1468,8 @@ ipcMain.handle(
 			username: string;
 			fullName: string;
 			password: string;
-			role?: "admin" | "staff";
+			role?: "admin" | "leader" | "staff";
+			allowedCategories?: string[];
 			actorUsername?: string;
 		},
 	) => {
@@ -1462,7 +1489,16 @@ ipcMain.handle(
 		const cleanUser = String(payload?.username ?? "").trim();
 		const cleanFullName = String(payload?.fullName ?? "").trim() || cleanUser;
 		const rawPass = typeof payload?.password === "string" ? payload.password : String(payload?.password ?? "");
-		const role: "admin" | "staff" = payload?.role === "admin" ? "admin" : "staff";
+		const role: "admin" | "leader" | "staff" =
+			payload?.role === "admin"
+				? "admin"
+				: payload?.role === "leader"
+					? "leader"
+					: "staff";
+		const allowedCategories =
+			role === "staff"
+				? sanitizeAllowedCategories(payload?.allowedCategories)
+				: [...ALL_GIS_CATEGORIES];
 
 		if (cleanUser.length < 3 || cleanUser.length > 32) {
 			return { success: false, error: "Tên đăng nhập phải từ 3 đến 32 ký tự." };
@@ -1475,6 +1511,9 @@ ipcMain.handle(
 		}
 		if (rawPass.length < 6) {
 			return { success: false, error: "Mật khẩu phải có ít nhất 6 ký tự." };
+		}
+		if (role === "staff" && allowedCategories.length === 0) {
+			return { success: false, error: "Vui lòng chọn ít nhất 1 danh mục cho tài khoản Cán bộ." };
 		}
 
 		const users = vault.users || [];
@@ -1490,6 +1529,7 @@ ipcMain.handle(
 			username: cleanUser,
 			fullName: cleanFullName,
 			role,
+			allowedCategories,
 			passwordSalt: pwHashed.salt,
 			passwordHash: pwHashed.hash,
 			isActive: true,
@@ -1502,7 +1542,12 @@ ipcMain.handle(
 		};
 
 		vault.users = [...users, newUser];
-		const roleLabel = role === "admin" ? "Quản trị viên" : "Cán bộ nhập liệu";
+		const roleLabel =
+			role === "admin"
+				? "Quản trị viên"
+				: role === "leader"
+					? "Lãnh đạo"
+					: "Cán bộ nhập liệu";
 		appendAuditLog(
 			"USER_CREATED",
 			"success",
@@ -1519,6 +1564,7 @@ ipcMain.handle(
 				username: newUser.username,
 				fullName: newUser.fullName,
 				role: newUser.role,
+				allowedCategories: newUser.allowedCategories,
 				isOwner: false,
 				isActive: newUser.isActive,
 				isLocked: newUser.isLocked,
@@ -1538,7 +1584,8 @@ ipcMain.handle(
 		payload: {
 			username: string;
 			fullName?: string;
-			role?: "admin" | "staff";
+			role?: "admin" | "leader" | "staff";
+			allowedCategories?: string[];
 			isActive?: boolean;
 			unlock?: boolean;
 			newPassword?: string;
@@ -1576,11 +1623,31 @@ ipcMain.handle(
 			changes.push(`Đổi họ tên thành "${target.fullName}"`);
 		}
 
-		if (payload.role && (payload.role === "admin" || payload.role === "staff") && payload.role !== target.role) {
+		if (
+			payload.role &&
+			(payload.role === "admin" || payload.role === "leader" || payload.role === "staff") &&
+			payload.role !== target.role
+		) {
 			target.role = payload.role;
-			changes.push(
-				`Đổi vai trò thành ${payload.role === "admin" ? "Quản trị viên" : "Cán bộ nhập liệu"}`,
-			);
+			const nextRoleLabel =
+				payload.role === "admin"
+					? "Quản trị viên"
+					: payload.role === "leader"
+						? "Lãnh đạo"
+						: "Cán bộ nhập liệu";
+			changes.push(`Đổi vai trò thành ${nextRoleLabel}`);
+			if (payload.role !== "staff") {
+				target.allowedCategories = [...ALL_GIS_CATEGORIES];
+			}
+		}
+
+		if (Array.isArray(payload.allowedCategories) && target.role === "staff") {
+			const cleanCats = sanitizeAllowedCategories(payload.allowedCategories);
+			if (cleanCats.length === 0) {
+				return { success: false, error: "Tài khoản Cán bộ phải có ít nhất 1 danh mục được phân quyền." };
+			}
+			target.allowedCategories = cleanCats;
+			changes.push(`Cập nhật quyền danh mục (${cleanCats.length}/7)`);
 		}
 
 		if (typeof payload.isActive === "boolean" && payload.isActive !== target.isActive) {

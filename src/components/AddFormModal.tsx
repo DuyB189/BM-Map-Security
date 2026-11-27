@@ -11,6 +11,7 @@ interface AddFormModalProps {
   menu: GISMenu[];
   selectedCoords: [number, number] | null;
   setSelectedCoords?: (val: [number, number] | null) => void;
+  onPickOnMap?: () => void;
   handleAdd: () => void;
   routeCoordinates?: [number, number][];
   setRouteCoordinates?: (val: any) => void;
@@ -26,6 +27,7 @@ export default function AddFormModal({
   menu,
   selectedCoords,
   setSelectedCoords,
+  onPickOnMap,
   handleAdd,
   routeCoordinates,
   setRouteCoordinates,
@@ -50,11 +52,17 @@ export default function AddFormModal({
       groupId: '',
       cccd: '',
       sdt: '',
+      hinh_anh: '',
+      nhom_nhan: [],
+      lich_su_hoat_dong: [],
       chu_camera: '',
       sdt_chu: '',
       mst: '',
       loai_hinh_kd: 'Hộ kinh doanh cá thể',
       giay_phep: '',
+      giay_phep_antt: {},
+      giay_phep_pccc: {},
+      lich_su_kiem_tra: [],
       chu_co_so: '',
       chu_ngaysinh: '',
       chu_cccd: '',
@@ -151,44 +159,73 @@ export default function AddFormModal({
 
               {!isRouteMode ? (
                 <div className="bg-sky-50 p-4 rounded-2xl border border-sky-100 mb-4 space-y-3">
-                  <div className="flex items-center gap-2 text-sky-800 font-bold text-xs">
-                    <MapPin className="w-4 h-4 text-sky-600" />
-                    <span>Tọa độ ghim</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-sky-800 font-bold text-xs">
+                      <MapPin className="w-4 h-4 text-sky-600" />
+                      <span>Tọa độ ghim (do người dùng chọn)</span>
+                    </div>
+                    {onPickOnMap && (
+                      <button
+                        type="button"
+                        onClick={onPickOnMap}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer"
+                      >
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span>Chọn vị trí trên bản đồ</span>
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Kinh độ (LNG)</label>
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Kinh độ (LNG) *</label>
                       <input 
                         type="number" 
                         step="any"
-                        placeholder="106.118308"
+                        placeholder="Nhập hoặc chọn trên bản đồ..."
                         className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 font-mono outline-none focus:ring-2 focus:ring-sky-500/20"
-                        value={selectedCoords ? selectedCoords[0] : ''}
+                        value={selectedCoords && Number.isFinite(selectedCoords[0]) ? selectedCoords[0] : ''}
                         onChange={(e) => {
-                          const val = parseFloat(e.target.value);
+                          const raw = e.target.value;
+                          const val = raw === '' ? NaN : parseFloat(raw);
                           if (setSelectedCoords) {
-                            setSelectedCoords([isNaN(val) ? 0 : val, selectedCoords ? selectedCoords[1] : 11.3387817]);
+                            const prevLat = selectedCoords ? selectedCoords[1] : NaN;
+                            if (isNaN(val) && isNaN(prevLat)) {
+                              setSelectedCoords(null);
+                            } else {
+                              setSelectedCoords([val, prevLat]);
+                            }
                           }
                         }}
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Vĩ độ (LAT)</label>
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Vĩ độ (LAT) *</label>
                       <input 
                         type="number" 
                         step="any"
-                        placeholder="11.338782"
+                        placeholder="Nhập hoặc chọn trên bản đồ..."
                         className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-700 font-mono outline-none focus:ring-2 focus:ring-sky-500/20"
-                        value={selectedCoords ? selectedCoords[1] : ''}
+                        value={selectedCoords && Number.isFinite(selectedCoords[1]) ? selectedCoords[1] : ''}
                         onChange={(e) => {
-                          const val = parseFloat(e.target.value);
+                          const raw = e.target.value;
+                          const val = raw === '' ? NaN : parseFloat(raw);
                           if (setSelectedCoords) {
-                            setSelectedCoords([selectedCoords ? selectedCoords[0] : 106.1183077, isNaN(val) ? 0 : val]);
+                            const prevLng = selectedCoords ? selectedCoords[0] : NaN;
+                            if (isNaN(val) && isNaN(prevLng)) {
+                              setSelectedCoords(null);
+                            } else {
+                              setSelectedCoords([prevLng, val]);
+                            }
                           }
                         }}
                       />
                     </div>
                   </div>
+                  {(!selectedCoords || !Number.isFinite(selectedCoords[0]) || !Number.isFinite(selectedCoords[1])) && (
+                    <p className="text-[11px] font-semibold text-amber-700">
+                      Vui lòng bấm &ldquo;Chọn vị trí trên bản đồ&rdquo; hoặc nhập đầy đủ Kinh độ &amp; Vĩ độ.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-center gap-3 bg-emerald-50 p-3 rounded-2xl border border-emerald-100 mb-4">
@@ -202,7 +239,12 @@ export default function AddFormModal({
 
               <button 
                 onClick={handleAdd}
-                disabled={!formData.title || (isRouteMode && (!routeCoordinates || routeCoordinates.length < 2))}
+                disabled={
+                  !formData.title ||
+                  (isRouteMode
+                    ? !routeCoordinates || routeCoordinates.length < 2
+                    : !selectedCoords || !Number.isFinite(selectedCoords[0]) || !Number.isFinite(selectedCoords[1]))
+                }
                 className="w-full bg-sky-600 hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-4 rounded-2xl shadow-lg shadow-sky-100 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Check className="w-5 h-5" /> {isRouteMode ? 'Lưu tuyến đường' : 'Xác nhận lưu ghim'}

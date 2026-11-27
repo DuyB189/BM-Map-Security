@@ -14,11 +14,12 @@ interface DetailsRendererProps {
   onClose: () => void;
   vuviecList?: any[];
   doituongList?: any[];
+  cameraList?: any[];
 }
 
-export default function DetailsRenderer({ details, onClose, vuviecList, doituongList }: DetailsRendererProps) {
+export default function DetailsRenderer({ details, onClose, vuviecList, doituongList, cameraList }: DetailsRendererProps) {
   switch (details.category) {
-    case 'vuviec-list': return <VuViecDetails details={details} onClose={onClose} vuviecList={vuviecList} doituongList={doituongList} />;
+    case 'vuviec-list': return <VuViecDetails details={details} onClose={onClose} vuviecList={vuviecList} doituongList={doituongList} cameraList={cameraList} />;
     case 'xa-list': return <XaDetails details={details} onClose={onClose} />;
     case 'camera-list': return <CameraDetails details={details} onClose={onClose} />;
     case 'doituong-list': return <DoiTuongDetails details={details} onClose={onClose} vuviecList={vuviecList} />;
